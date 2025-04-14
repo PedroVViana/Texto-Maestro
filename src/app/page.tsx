@@ -34,14 +34,14 @@ export default function Home() {
       const result = await rewriteText(input);
       setRewrittenText(result.rewrittenText);
       toast({
-        title: "Text Rewritten",
-        description: "Successfully rewritten the text.",
+        title: "Texto reescrito",
+        description: "Texto reescrito com sucesso.",
       });
     } catch (error: any) {
       toast({
         variant: "destructive",
-        title: "Error",
-        description: error.message || "Failed to rewrite text.",
+        title: "Erro",
+        description: error.message || "Falha ao reescrever o texto.",
       });
     } finally {
       setLoading(false);
@@ -51,8 +51,8 @@ export default function Home() {
   const handleCopy = () => {
     navigator.clipboard.writeText(rewrittenText);
     toast({
-      title: "Copied!",
-      description: "Rewritten text copied to clipboard.",
+      title: "Copiado!",
+      description: "Texto reescrito copiado para a área de transferência.",
     });
   };
 
@@ -62,22 +62,30 @@ export default function Home() {
       type: "text/plain",
     });
     element.href = URL.createObjectURL(file);
-    element.download = "rewritten_text.txt";
+    element.download = "texto_reescrito.txt";
     document.body.appendChild(element); // Required for this to work in FireFox
     element.click();
   };
+
+  const rewriteStyleTranslations: {[key: string] : string} = {
+    "Grammar correction": "Correção gramatical",
+    "Formal rewrite": "Reescrita formal",
+    "Simplified rewrite": "Reescrita simplificada",
+    "Persuasive rewrite": "Reescrita persuasiva",
+    "Social media optimization": "Otimização de mídia social",
+  }
 
   return (
     <div className="flex flex-col items-center justify-start min-h-screen bg-background p-4">
       <Card className="w-full max-w-2xl p-4">
         <CardHeader>
           <CardTitle>Texto Maestro</CardTitle>
-          <CardDescription>Enter the text you want to rewrite.</CardDescription>
+          <CardDescription>Insira o texto que você deseja reescrever.</CardDescription>
         </CardHeader>
         <CardContent className="grid gap-4">
           <div className="grid gap-2">
             <Textarea
-              placeholder="Enter your text here..."
+              placeholder="Digite seu texto aqui..."
               value={text}
               onChange={(e) => setText(e.target.value)}
             />
@@ -85,19 +93,19 @@ export default function Home() {
           <div className="grid gap-2">
             <Select onValueChange={value => setStyle(value as RewriteTextInput["style"])}>
               <SelectTrigger>
-                <SelectValue placeholder={style}/>
+                <SelectValue placeholder={rewriteStyleTranslations[style] || style}/>
               </SelectTrigger>
               <SelectContent>
                 {rewriteStyles.map((styleOption) => (
                   <SelectItem key={styleOption} value={styleOption}>
-                    {styleOption}
+                    {rewriteStyleTranslations[styleOption] || styleOption}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
           </div>
           <Button onClick={handleRewrite} disabled={loading} className="bg-accent text-white">
-            {loading ? "Generating..." : "Generate Text"}
+            {loading ? "Gerando..." : "Gerar texto"}
           </Button>
         </CardContent>
       </Card>
@@ -105,18 +113,18 @@ export default function Home() {
       {rewrittenText && (
         <Card className="w-full max-w-2xl mt-6 p-4">
           <CardHeader>
-            <CardTitle>Rewritten Text</CardTitle>
+            <CardTitle>Texto reescrito</CardTitle>
           </CardHeader>
           <CardContent className="grid gap-4">
             <div className="whitespace-pre-line">{rewrittenText}</div>
             <div className="flex justify-end gap-2">
               <Button variant="outline" size="icon" onClick={handleCopy}>
                 <Copy className="h-4 w-4"/>
-                <span className="sr-only">Copy</span>
+                <span className="sr-only">Copiar</span>
               </Button>
               <Button variant="outline" size="icon" onClick={handleDownload}>
                 <Download className="h-4 w-4"/>
-                <span className="sr-only">Download</span>
+                <span className="sr-only">Baixar</span>
               </Button>
             </div>
           </CardContent>
