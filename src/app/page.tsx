@@ -258,9 +258,21 @@ export default function Home() {
           <div className="mb-1 md:mb-2">
             <span className="text-gradient-primary font-semibold">Texto Maestro</span> &copy; {new Date().getFullYear()}
           </div>
-          <p className="text-[10px] md:text-sm">
+          <p className="text-[10px] md:text-sm mb-2">
             Transformando texto comum em obras-primas com IA
           </p>
+          <div className="text-[10px] md:text-sm mb-3">
+            Desenvolvido por <span className="font-medium">Pedro Van-lume</span>
+          </div>
+          <a 
+            href="https://pedrovviana.github.io/portfolio-PedroVanlume/" 
+            target="_blank" 
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-2 px-3 py-1.5 bg-primary/10 hover:bg-primary/20 text-primary rounded-md transition-colors text-xs md:text-sm font-medium"
+          >
+            <Sparkles className="h-3 w-3 md:h-4 md:w-4" />
+            Ver outros projetos do autor
+          </a>
         </div>
       </footer>
     </div>
