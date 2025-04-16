@@ -4,7 +4,7 @@ import {RewriteTextInput, rewriteText} from "@/ai/flows/rewrite-text";
 import {Button} from "@/components/ui/button";
 import {Textarea} from "@/components/ui/textarea";
 import {Select, SelectContent, SelectItem, SelectTrigger, SelectValue} from "@/components/ui/select";
-import {useState, useEffect} from "react";
+import {useState, useEffect, Suspense} from "react";
 import {Card, CardContent, CardDescription, CardHeader, CardTitle} from "@/components/ui/card";
 import {useToast} from "@/hooks/use-toast";
 import {
@@ -81,7 +81,8 @@ interface AdvancedConfig {
   enableAdvancedOptions: boolean;
 }
 
-export default function Home() {
+// Componente principal que usa useSearchParams
+function HomeContent() {
   const searchParams = useSearchParams();
   const [text, setText] = useState("");
   const [style, setStyle] = useState<RewriteStyle>(rewriteStyles[0]);
@@ -679,5 +680,23 @@ export default function Home() {
         </div>
       </footer>
     </div>
+  );
+}
+
+// Componente de fallback simples para o Suspense
+function LoadingHome() {
+  return (
+    <div className="flex items-center justify-center min-h-screen">
+      <div className="animate-spin h-10 w-10 border-4 border-primary border-t-transparent rounded-full"></div>
+    </div>
+  );
+}
+
+// Componente principal que exportamos, envolvido com Suspense
+export default function Home() {
+  return (
+    <Suspense fallback={<LoadingHome />}>
+      <HomeContent />
+    </Suspense>
   );
 }
