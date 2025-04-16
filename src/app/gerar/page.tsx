@@ -1,6 +1,6 @@
 "use client";
 
-import {RewriteTextInput, rewriteText} from "@/ai/flows/rewrite-text";
+import {GenerateTextInput, generateText} from "@/ai/flows/generate-text";
 import {Button} from "@/components/ui/button";
 import {Textarea} from "@/components/ui/textarea";
 import {Select, SelectContent, SelectItem, SelectTrigger, SelectValue} from "@/components/ui/select";
@@ -16,41 +16,45 @@ import {
   Clock, 
   BarChart2, 
   PenTool,
-  ArrowRight,
-  Settings,
-  ChevronDown,
-  ChevronUp
+  ArrowLeft,
+  Settings
 } from "lucide-react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
 
-const rewriteStyles = [
-  "Grammar correction",
-  "Formal rewrite",
-  "Simplified rewrite",
-  "Persuasive rewrite",
-  "Social media optimization",
-  "Academic style",
-  "Journalistic style",
-  "Creative/Narrative style",
-  "Technical style",
-  "SEO optimized",
+const textStyles = [
+  "Formal",
+  "Casual",
+  "Informativo",
+  "Persuasivo",
+  "Criativo/Narrativo",
+  "Acadêmico",
+  "Jornalístico",
+  "Poético",
+  "Técnico",
+  "Motivacional",
 ] as const;
 
-type RewriteStyle = typeof rewriteStyles[number];
+const textLengths = [
+  "Curto",
+  "Médio",
+  "Longo",
+] as const;
 
-interface TextResult {
+type TextStyle = typeof textStyles[number];
+type TextLength = typeof textLengths[number];
+
+interface TextGeneration {
   id: string;
-  originalText: string;
-  rewrittenText: string;
-  style: RewriteTextInput["style"];
+  topic: string;
+  generatedText: string;
+  style: TextStyle;
+  length: TextLength;
   timestamp: Date;
-  analysis?: TextAnalysis;
-  differences?: {
+  analysis?: {
     wordCount: number;
     charCount: number;
     sentenceCount: number;
@@ -63,57 +67,39 @@ interface TextAnalysis {
   charCount: number;
   sentenceCount: number;
   readTime: number;
-  sentimentScore?: number;
-  sentimentLabel: 'Positivo' | 'Neutro' | 'Negativo';
-  comparison?: {
-    wordCountDiff: number;
-    charCountDiff: number;
-    sentenceCountDiff: number;
-    readTimeDiff: number;
-  };
 }
 
 interface AdvancedConfig {
   targetCharCount: number;
-  targetWordCount: number;
   targetReadTime: number;
-  targetSentiment: 'Positivo' | 'Neutro' | 'Negativo' | 'Manter original';
+  targetSentiment: 'Positivo' | 'Neutro' | 'Negativo' | 'Não definir';
   enableAdvancedOptions: boolean;
 }
 
-export default function Home() {
-  const searchParams = useSearchParams();
-  const [text, setText] = useState("");
-  const [style, setStyle] = useState<RewriteStyle>(rewriteStyles[0]);
-  const [textResults, setTextResults] = useState<TextResult[]>([]);
+export default function GeneratePage() {
+  const [topic, setTopic] = useState("");
+  const [style, setStyle] = useState<TextStyle>(textStyles[0]);
+  const [length, setLength] = useState<TextLength>(textLengths[1]);
+  const [textGenerations, setTextGenerations] = useState<TextGeneration[]>([]);
   const [loading, setLoading] = useState(false);
   const [textAnalysis, setTextAnalysis] = useState<TextAnalysis | null>(null);
   const [advancedConfig, setAdvancedConfig] = useState<AdvancedConfig>({
     targetCharCount: 500,
-    targetWordCount: 100,
     targetReadTime: 3,
-    targetSentiment: 'Manter original',
+    targetSentiment: 'Não definir',
     enableAdvancedOptions: false
   });
   const {toast} = useToast();
 
-  // Buscar texto da URL, se existir (vindo da página de geração)
   useEffect(() => {
-    const textFromParams = searchParams.get("text");
-    if (textFromParams) {
-      setText(decodeURIComponent(textFromParams));
-    }
-  }, [searchParams]);
-
-  useEffect(() => {
-    if (text.trim()) {
-      analyzeText(text);
+    if (topic.trim()) {
+      analyzeText(topic);
     } else {
       setTextAnalysis(null);
     }
-  }, [text]);
+  }, [topic]);
 
-  const analyzeText = (text: string): TextAnalysis => {
+  const analyzeText = (text: string) => {
     // Contagem de palavras
     const wordCount = text.trim().split(/\s+/).filter(word => word.length > 0).length;
     
@@ -126,116 +112,84 @@ export default function Home() {
     // Tempo de leitura (considerando 200 palavras por minuto)
     const readTime = Math.max(1, Math.ceil(wordCount / 200));
     
-    // Análise simples de sentimento
-    let sentimentScore = 0;
-    const positiveWords = ['bom', 'ótimo', 'excelente', 'incrível', 'feliz', 'positivo', 'maravilhoso', 'sucesso', 'perfeito'];
-    const negativeWords = ['ruim', 'péssimo', 'terrível', 'horrível', 'triste', 'negativo', 'fracasso', 'defeito', 'problema'];
-    
-    const words = text.toLowerCase().split(/\s+/);
-    
-    words.forEach(word => {
-      if (positiveWords.some(pw => word.includes(pw))) sentimentScore++;
-      if (negativeWords.some(nw => word.includes(nw))) sentimentScore--;
-    });
-    
-    let sentimentLabel: 'Positivo' | 'Neutro' | 'Negativo' = 'Neutro';
-    if (sentimentScore > 0) sentimentLabel = 'Positivo';
-    if (sentimentScore < 0) sentimentLabel = 'Negativo';
-    
-    const analysis: TextAnalysis = {
+    setTextAnalysis({
       wordCount,
       charCount,
       sentenceCount,
-      readTime,
-      sentimentScore,
-      sentimentLabel
-    };
-    
-    setTextAnalysis(analysis);
-    return analysis;
+      readTime
+    });
   };
 
-  const handleRewrite = async () => {
-    if (!text.trim()) return;
+  const handleGenerate = async () => {
+    if (!topic.trim()) {
+      toast({
+        variant: "destructive",
+        title: "Erro",
+        description: "Por favor, insira um tópico para gerar o texto.",
+      });
+      return;
+    }
     
     setLoading(true);
-    
     try {
-      const rewriteInput: RewriteTextInput = {
-        text,
-        style,
-        ...(advancedConfig.enableAdvancedOptions ? {
-          targetCharCount: advancedConfig.targetCharCount,
-          targetWordCount: advancedConfig.targetWordCount,
-          targetReadTime: advancedConfig.targetReadTime,
-          targetSentiment: advancedConfig.targetSentiment !== "Manter original" 
-            ? advancedConfig.targetSentiment 
-            : undefined
-        } : {})
-      };
-
-      const response = await fetch('/api/rewrite', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(rewriteInput),
-      });
-
-      const data = await response.json();
+      // Configurar instruções adicionais baseadas nas configurações avançadas
+      let additionalInstructions = "";
       
-      if (!response.ok) {
-        throw new Error(data.error || 'Erro ao reescrever texto');
+      if (advancedConfig.enableAdvancedOptions) {
+        if (advancedConfig.targetCharCount > 0) {
+          additionalInstructions += `\nMantenha o texto com aproximadamente ${advancedConfig.targetCharCount} caracteres.`;
+        }
+        
+        if (advancedConfig.targetReadTime > 0) {
+          additionalInstructions += `\nEscreva de forma que o tempo de leitura seja de aproximadamente ${advancedConfig.targetReadTime} minutos.`;
+        }
+        
+        if (advancedConfig.targetSentiment !== 'Não definir') {
+          additionalInstructions += `\nO texto deve expressar um sentimento predominantemente ${advancedConfig.targetSentiment.toLowerCase()}.`;
+        }
       }
       
-      // Análise do texto reescrito
-      const rewrittenTextAnalysis: TextAnalysis = analyzeText(data.rewrittenText);
-      
-      // Calculando diferenças percentuais
-      const updatedAnalysis: TextAnalysis = rewrittenTextAnalysis;
-      
-      // Criando objeto com as diferenças
-      const differences = (textAnalysis && rewrittenTextAnalysis) 
-        ? {
-            wordCount: calculatePercentageDiff(textAnalysis.wordCount, rewrittenTextAnalysis.wordCount),
-            charCount: calculatePercentageDiff(textAnalysis.charCount, rewrittenTextAnalysis.charCount),
-            sentenceCount: calculatePercentageDiff(textAnalysis.sentenceCount, rewrittenTextAnalysis.sentenceCount),
-            readTime: calculatePercentageDiff(textAnalysis.readTime, rewrittenTextAnalysis.readTime)
-          } 
-        : undefined;
-      
-      // Criando objeto de resultado
-      const result: TextResult = {
-        id: generateId(),
-        originalText: text,
-        rewrittenText: data.rewrittenText,
-        style: rewriteInput.style,
-        timestamp: new Date(),
-        analysis: updatedAnalysis,
-        differences
+      const input: GenerateTextInput = {
+        topic: topic,
+        style: style,
+        length: length,
+        additionalInstructions: additionalInstructions || undefined
       };
       
-      // Adicionando ao histórico
-      setTextResults(prev => [result, ...prev]);
+      const result = await generateText(input);
       
-      // Notificação de sucesso
+      // Análise do texto gerado
+      const generatedTextAnalysis = analyzeGeneratedText(result.generatedText);
+      
+      // Adicionar novo resultado ao histórico
+      const newGeneration: TextGeneration = {
+        id: generateId(),
+        topic: topic,
+        generatedText: result.generatedText,
+        style,
+        length,
+        timestamp: new Date(),
+        analysis: generatedTextAnalysis
+      };
+      
+      setTextGenerations(prev => [newGeneration, ...prev]);
+      
       toast({
-        title: "Texto reescrito com sucesso!",
-        description: "Seu texto foi reescrito no estilo solicitado.",
+        title: "Texto gerado",
+        description: "Texto gerado com sucesso.",
       });
-    } catch (error) {
-      console.error('Erro ao reescrever texto:', error);
+    } catch (error: any) {
       toast({
-        title: "Erro ao reescrever texto",
-        description: error instanceof Error ? error.message : "Ocorreu um erro inesperado.",
         variant: "destructive",
+        title: "Erro",
+        description: error.message || "Falha ao gerar o texto.",
       });
     } finally {
       setLoading(false);
     }
   };
 
-  const analyzeRewrittenText = (text: string): TextAnalysis => {
+  const analyzeGeneratedText = (text: string) => {
     // Contagem de palavras
     const wordCount = text.trim().split(/\s+/).filter(word => word.length > 0).length;
     
@@ -248,29 +202,11 @@ export default function Home() {
     // Tempo de leitura (considerando 200 palavras por minuto)
     const readTime = Math.max(1, Math.ceil(wordCount / 200));
     
-    // Análise simples de sentimento
-    let sentimentScore = 0;
-    const positiveWords = ['bom', 'ótimo', 'excelente', 'incrível', 'feliz', 'positivo', 'maravilhoso', 'sucesso', 'perfeito'];
-    const negativeWords = ['ruim', 'péssimo', 'terrível', 'horrível', 'triste', 'negativo', 'fracasso', 'defeito', 'problema'];
-    
-    const words = text.toLowerCase().split(/\s+/);
-    
-    words.forEach(word => {
-      if (positiveWords.some(pw => word.includes(pw))) sentimentScore++;
-      if (negativeWords.some(nw => word.includes(nw))) sentimentScore--;
-    });
-    
-    let sentimentLabel: 'Positivo' | 'Neutro' | 'Negativo' = 'Neutro';
-    if (sentimentScore > 0) sentimentLabel = 'Positivo';
-    if (sentimentScore < 0) sentimentLabel = 'Negativo';
-    
     return {
       wordCount,
       charCount,
       sentenceCount,
-      readTime,
-      sentimentScore,
-      sentimentLabel
+      readTime
     };
   };
 
@@ -298,44 +234,11 @@ export default function Home() {
     document.body.removeChild(element);
   };
 
-  const rewriteStyleTranslations: {[key: string] : string} = {
-    "Grammar correction": "Correção gramatical",
-    "Formal rewrite": "Reescrita formal",
-    "Simplified rewrite": "Reescrita simplificada",
-    "Persuasive rewrite": "Reescrita persuasiva",
-    "Social media optimization": "Otimização de mídia social",
-    "Academic style": "Estilo acadêmico",
-    "Journalistic style": "Estilo jornalístico",
-    "Creative/Narrative style": "Estilo criativo/narrativo",
-    "Technical style": "Estilo técnico",
-    "SEO optimized": "Otimizado para SEO",
-  }
-
   const formatDate = (date: Date) => {
     return new Intl.DateTimeFormat('pt-BR', {
       hour: '2-digit',
       minute: '2-digit'
     }).format(date);
-  };
-
-  const renderSentimentBadge = (sentiment: 'Positivo' | 'Neutro' | 'Negativo') => {
-    let badgeClass = 'px-1.5 py-0.5 rounded text-xs font-medium ';
-    
-    if (sentiment === 'Positivo') {
-      badgeClass += 'bg-green-100 text-green-800 dark:bg-green-800/20 dark:text-green-300';
-    } else if (sentiment === 'Negativo') {
-      badgeClass += 'bg-red-100 text-red-800 dark:bg-red-800/20 dark:text-red-300';
-    } else {
-      badgeClass += 'bg-blue-100 text-blue-800 dark:bg-blue-800/20 dark:text-blue-300';
-    }
-    
-    return <span className={badgeClass}>{sentiment}</span>;
-  };
-
-  // Função para calcular diferença percentual
-  const calculatePercentageDiff = (original: number, updated: number): number => {
-    if (original === 0) return updated > 0 ? 100 : 0;
-    return Math.round(((updated - original) / original) * 100);
   };
 
   return (
@@ -347,22 +250,23 @@ export default function Home() {
       <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-40 h-40 md:w-60 md:h-60 rounded-full bg-secondary/10 blur-3xl opacity-30"></div>
       
       {/* Título Principal */}
-      <div className="w-full max-w-2xl text-center mb-6 mt-4 md:mb-8 md:mt-8 px-2">
-        <div className="flex justify-end mb-3">
-          <Link href="/gerar" className="flex items-center gap-1 text-primary hover:text-accent transition-colors">
-            <span className="text-xs md:text-sm">Criar Novo Texto</span>
-            <ArrowRight className="h-4 w-4 md:h-5 md:w-5" />
+      <div className="w-full max-w-2xl mb-6 mt-4 md:mb-8 md:mt-8 px-2">
+        <div className="flex justify-between items-center">
+          <Link href="/" className="flex items-center gap-1 text-primary hover:text-accent transition-colors">
+            <ArrowLeft className="h-4 w-4 md:h-5 md:w-5" />
+            <span className="text-xs md:text-sm">Voltar para Reescrita</span>
           </Link>
         </div>
-        <div className="flex items-center justify-center gap-1 md:gap-2 mb-2">
-          <Wand size={28} className="text-primary animate-float hidden sm:block md:text-3xl" />
+        
+        <div className="flex items-center justify-center gap-1 md:gap-2 mb-2 mt-4">
+          <PenTool size={28} className="text-primary animate-float hidden sm:block md:text-3xl" />
           <h1 className="text-gradient text-3xl sm:text-4xl md:text-5xl font-bold tracking-tight">
-            Texto Maestro
+            Criar Texto
           </h1>
           <Sparkles size={20} className="text-accent animate-float hidden sm:block md:text-2xl" />
         </div>
-        <p className="text-sm md:text-lg text-muted-foreground px-2">
-          Transforme e aprimore seus textos com inteligência artificial
+        <p className="text-sm md:text-lg text-muted-foreground px-2 text-center">
+          Gere textos criativos para qualquer tópico com inteligência artificial
         </p>
       </div>
 
@@ -370,16 +274,18 @@ export default function Home() {
         <CardHeader className="p-3 md:p-6">
           <CardTitle className="flex items-center gap-2 text-lg md:text-xl">
             <FileText className="h-4 w-4 md:h-5 md:w-5 text-primary" />
-            <span className="text-gradient-primary">Editor de Texto</span>
+            <span className="text-gradient-primary">Gerador de Texto</span>
           </CardTitle>
-          <CardDescription className="text-xs md:text-sm">Insira o texto que você deseja reescrever.</CardDescription>
+          <CardDescription className="text-xs md:text-sm">
+            Insira um tópico ou prompt para criar um texto completo automaticamente.
+          </CardDescription>
         </CardHeader>
         <CardContent className="grid gap-3 md:gap-4 p-3 md:p-6 pt-0 md:pt-0">
           <div className="grid gap-2">
             <Textarea
-              placeholder="Digite seu texto aqui..."
-              value={text}
-              onChange={(e) => setText(e.target.value)}
+              placeholder="Digite um tópico ou ideia para gerar um texto..."
+              value={topic}
+              onChange={(e) => setTopic(e.target.value)}
               className="min-h-24 md:min-h-32 border-2 focus:border-primary/50 text-sm md:text-base"
             />
             
@@ -387,10 +293,10 @@ export default function Home() {
               <div className="bg-muted/30 rounded-md p-2 md:p-3 border text-xs md:text-sm">
                 <div className="flex items-center gap-1 mb-1.5 text-primary font-medium">
                   <BarChart2 className="h-3 w-3 md:h-4 md:w-4" />
-                  <span>Análise de Texto</span>
+                  <span>Análise de Prompt</span>
                 </div>
                 
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-x-3 gap-y-1.5">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-x-3 gap-y-1.5">
                   <div className="flex items-center gap-1">
                     <span className="text-muted-foreground">Palavras:</span>
                     <span className="font-medium">{textAnalysis.wordCount}</span>
@@ -400,41 +306,55 @@ export default function Home() {
                     <span className="text-muted-foreground">Caracteres:</span>
                     <span className="font-medium">{textAnalysis.charCount}</span>
                   </div>
-                  
-                  <div className="flex items-center gap-1">
-                    <span className="text-muted-foreground">Frases:</span>
-                    <span className="font-medium">{textAnalysis.sentenceCount}</span>
-                  </div>
-                  
-                  <div className="flex items-center gap-1">
-                    <span className="text-muted-foreground">Tempo de leitura:</span>
-                    <span className="font-medium">{textAnalysis.readTime} min</span>
-                  </div>
-                  
-                  <div className="flex items-center gap-1 col-span-2 md:col-span-1">
-                    <span className="text-muted-foreground">Sentimento:</span>
-                    {renderSentimentBadge(textAnalysis.sentimentLabel)}
-                  </div>
                 </div>
               </div>
             )}
           </div>
-
-          <div className="grid gap-2">
-            <Select onValueChange={value => setStyle(value as RewriteTextInput["style"])}>
-              <SelectTrigger className="text-xs md:text-sm h-9 md:h-10">
-                <SelectValue placeholder={rewriteStyleTranslations[style] || style}/>
-              </SelectTrigger>
-              <SelectContent>
-                {rewriteStyles.map((styleOption) => (
-                  <SelectItem key={styleOption} value={styleOption} className="text-xs md:text-sm">
-                    {rewriteStyleTranslations[styleOption] || styleOption}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+            <div>
+              <label className="text-xs font-medium text-muted-foreground mb-1 block">
+                Estilo de escrita
+              </label>
+              <Select 
+                value={style} 
+                onValueChange={(value) => setStyle(value as TextStyle)}
+              >
+                <SelectTrigger className="text-xs md:text-sm h-9 md:h-10">
+                  <SelectValue placeholder={style} />
+                </SelectTrigger>
+                <SelectContent>
+                  {textStyles.map((styleOption) => (
+                    <SelectItem key={styleOption} value={styleOption} className="text-xs md:text-sm">
+                      {styleOption}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            
+            <div>
+              <label className="text-xs font-medium text-muted-foreground mb-1 block">
+                Tamanho do texto
+              </label>
+              <Select 
+                value={length} 
+                onValueChange={(value) => setLength(value as TextLength)}
+              >
+                <SelectTrigger className="text-xs md:text-sm h-9 md:h-10">
+                  <SelectValue placeholder={length} />
+                </SelectTrigger>
+                <SelectContent>
+                  {textLengths.map((lengthOption) => (
+                    <SelectItem key={lengthOption} value={lengthOption} className="text-xs md:text-sm">
+                      {lengthOption}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
-
+          
           <Accordion 
             type="single" 
             collapsible 
@@ -476,20 +396,6 @@ export default function Home() {
                   </div>
                   
                   <div className="space-y-2">
-                    <Label className="text-xs">Quantidade de palavras: {advancedConfig.targetWordCount}</Label>
-                    <Slider 
-                      defaultValue={[advancedConfig.targetWordCount]} 
-                      max={500} 
-                      step={10}
-                      min={20}
-                      onValueChange={(value) => setAdvancedConfig({
-                        ...advancedConfig,
-                        targetWordCount: value[0]
-                      })}
-                    />
-                  </div>
-                  
-                  <div className="space-y-2">
                     <Label className="text-xs">Tempo de leitura (minutos): {advancedConfig.targetReadTime}</Label>
                     <Slider 
                       defaultValue={[advancedConfig.targetReadTime]} 
@@ -509,25 +415,25 @@ export default function Home() {
                       defaultValue={advancedConfig.targetSentiment}
                       onValueChange={(value) => setAdvancedConfig({
                         ...advancedConfig,
-                        targetSentiment: value as 'Positivo' | 'Neutro' | 'Negativo' | 'Manter original'
+                        targetSentiment: value as 'Positivo' | 'Neutro' | 'Negativo' | 'Não definir'
                       })}
                       className="flex gap-4"
                     >
                       <div className="flex items-center space-x-1">
-                        <RadioGroupItem value="Positivo" id="positive" />
-                        <Label htmlFor="positive" className="text-xs">Positivo</Label>
+                        <RadioGroupItem value="Positivo" id="positive-gen" />
+                        <Label htmlFor="positive-gen" className="text-xs">Positivo</Label>
                       </div>
                       <div className="flex items-center space-x-1">
-                        <RadioGroupItem value="Neutro" id="neutral" />
-                        <Label htmlFor="neutral" className="text-xs">Neutro</Label>
+                        <RadioGroupItem value="Neutro" id="neutral-gen" />
+                        <Label htmlFor="neutral-gen" className="text-xs">Neutro</Label>
                       </div>
                       <div className="flex items-center space-x-1">
-                        <RadioGroupItem value="Negativo" id="negative" />
-                        <Label htmlFor="negative" className="text-xs">Negativo</Label>
+                        <RadioGroupItem value="Negativo" id="negative-gen" />
+                        <Label htmlFor="negative-gen" className="text-xs">Negativo</Label>
                       </div>
                       <div className="flex items-center space-x-1">
-                        <RadioGroupItem value="Manter original" id="keep" />
-                        <Label htmlFor="keep" className="text-xs">Manter</Label>
+                        <RadioGroupItem value="Não definir" id="none-gen" />
+                        <Label htmlFor="none-gen" className="text-xs">Não definir</Label>
                       </div>
                     </RadioGroup>
                   </div>
@@ -535,10 +441,10 @@ export default function Home() {
               </AccordionContent>
             </AccordionItem>
           </Accordion>
-
+          
           <Button 
-            onClick={handleRewrite} 
-            disabled={loading || !text.trim()} 
+            onClick={handleGenerate} 
+            disabled={loading || !topic.trim()} 
             className="bg-accent text-white hover:shadow-lg transition-all duration-300 hover:bg-accent/90 h-9 md:h-10 text-xs md:text-sm"
           >
             {loading ? (
@@ -548,7 +454,7 @@ export default function Home() {
               </span>
             ) : (
               <span className="flex items-center gap-2">
-                <Sparkles className="h-3 w-3 md:h-4 md:w-4" />
+                <Wand className="h-3 w-3 md:h-4 md:w-4" />
                 Gerar texto
               </span>
             )}
@@ -556,98 +462,103 @@ export default function Home() {
         </CardContent>
       </Card>
 
-      {textResults.length > 0 && (
+      {textGenerations.length > 0 && (
         <div className="w-full max-w-xs sm:max-w-md md:max-w-2xl mt-6">
           <div className="flex items-center gap-2 mb-3 md:mb-4 px-1">
             <Clock className="h-4 w-4 md:h-5 md:w-5 text-primary" />
-            <h2 className="text-base md:text-xl font-semibold">Histórico de textos</h2>
+            <h2 className="text-base md:text-xl font-semibold">Histórico de textos gerados</h2>
           </div>
           
           <div className="space-y-4 md:space-y-6">
-            {textResults.map((result) => (
-              <Card key={result.id} className="w-full shadow-lg card-glass">
+            {textGenerations.map((generation) => (
+              <Card key={generation.id} className="w-full shadow-lg card-glass">
                 <CardHeader className="pb-1 md:pb-2 p-3 md:p-4">
                   <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-1 sm:gap-0">
                     <CardTitle className="flex items-center gap-1 md:gap-2 text-sm md:text-base">
                       <Sparkles className="h-3 w-3 md:h-5 md:w-5 text-accent" />
                       <span className="text-gradient-accent truncate max-w-[180px] sm:max-w-none">
-                        {rewriteStyleTranslations[result.style] || result.style}
+                        {generation.style} • {generation.length}
                       </span>
                     </CardTitle>
                     <span className="text-[10px] md:text-xs text-muted-foreground flex items-center gap-1">
                       <Clock className="h-2 w-2 md:h-3 md:w-3" /> 
-                      {formatDate(result.timestamp)}
+                      {formatDate(generation.timestamp)}
                     </span>
                   </div>
                   <CardDescription className="mt-1 text-[10px] md:text-xs">
-                    Texto original: {result.originalText.length > 30 
-                      ? result.originalText.substring(0, 30) + "..." 
-                      : result.originalText}
+                    Tópico: {generation.topic.length > 60 
+                      ? generation.topic.substring(0, 60) + "..." 
+                      : generation.topic}
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="grid gap-3 md:gap-4 p-3 md:p-4">
                   <div className="whitespace-pre-line p-2 md:p-4 bg-muted/30 rounded-md border text-xs md:text-sm overflow-auto max-h-[250px] md:max-h-[300px]">
-                    {result.rewrittenText}
+                    {generation.generatedText}
                   </div>
 
-                  {result.analysis && (
+                  {generation.analysis && (
                     <div className="bg-muted/30 rounded-md p-2 md:p-3 border text-xs md:text-sm">
                       <div className="flex items-center gap-1 mb-1.5 text-primary font-medium">
                         <BarChart2 className="h-3 w-3 md:h-4 md:w-4" />
-                        <span>Análise do Texto Reescrito</span>
+                        <span>Análise do Texto Gerado</span>
                       </div>
                       
-                      <div className="grid grid-cols-2 md:grid-cols-3 gap-x-3 gap-y-1.5">
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-x-3 gap-y-1.5">
                         <div className="flex items-center gap-1">
                           <span className="text-muted-foreground">Palavras:</span>
-                          <span className="font-medium">{result.analysis.wordCount}</span>
+                          <span className="font-medium">{generation.analysis.wordCount}</span>
                         </div>
                         
                         <div className="flex items-center gap-1">
                           <span className="text-muted-foreground">Caracteres:</span>
-                          <span className="font-medium">{result.analysis.charCount}</span>
+                          <span className="font-medium">{generation.analysis.charCount}</span>
                         </div>
                         
                         <div className="flex items-center gap-1">
                           <span className="text-muted-foreground">Frases:</span>
-                          <span className="font-medium">{result.analysis.sentenceCount}</span>
+                          <span className="font-medium">{generation.analysis.sentenceCount}</span>
                         </div>
                         
                         <div className="flex items-center gap-1">
                           <span className="text-muted-foreground">Tempo de leitura:</span>
-                          <span className="font-medium">{result.analysis.readTime} min</span>
-                        </div>
-                        
-                        <div className="flex items-center gap-1 col-span-2 md:col-span-1">
-                          <span className="text-muted-foreground">Sentimento:</span>
-                          {renderSentimentBadge(result.analysis.sentimentLabel)}
+                          <span className="font-medium">{generation.analysis.readTime} min</span>
                         </div>
                       </div>
                     </div>
                   )}
 
-                  <div className="flex justify-end gap-2">
-                    <Button 
-                      variant="outline" 
-                      size="icon" 
-                      onClick={() => handleCopy(result.rewrittenText)} 
-                      className="h-8 w-8 md:h-10 md:w-10 border-accent/30 text-accent hover:bg-accent hover:text-accent-foreground hover:border-accent transition-colors"
+                  <div className="flex justify-between items-center gap-2">
+                    <Link
+                      href={`/?text=${encodeURIComponent(generation.generatedText)}`}
+                      className="text-xs text-primary hover:underline hover:text-accent transition-colors flex items-center gap-1"
                     >
-                      <Copy className="h-3 w-3 md:h-4 md:w-4"/>
-                      <span className="sr-only">Copiar</span>
-                    </Button>
-                    <Button 
-                      variant="outline" 
-                      size="icon" 
-                      onClick={() => handleDownload(
-                        result.rewrittenText, 
-                        `texto_${rewriteStyleTranslations[result.style] || result.style}_${result.id}.txt`
-                      )} 
-                      className="h-8 w-8 md:h-10 md:w-10 border-primary/30 text-primary hover:bg-primary hover:text-primary-foreground hover:border-primary transition-colors"
-                    >
-                      <Download className="h-3 w-3 md:h-4 md:w-4"/>
-                      <span className="sr-only">Baixar</span>
-                    </Button>
+                      <PenTool className="h-3 w-3" />
+                      Reescrever este texto
+                    </Link>
+                    
+                    <div className="flex gap-2">
+                      <Button 
+                        variant="outline" 
+                        size="icon" 
+                        onClick={() => handleCopy(generation.generatedText)} 
+                        className="h-8 w-8 md:h-10 md:w-10 border-accent/30 text-accent hover:bg-accent hover:text-accent-foreground hover:border-accent transition-colors"
+                      >
+                        <Copy className="h-3 w-3 md:h-4 md:w-4"/>
+                        <span className="sr-only">Copiar</span>
+                      </Button>
+                      <Button 
+                        variant="outline" 
+                        size="icon" 
+                        onClick={() => handleDownload(
+                          generation.generatedText, 
+                          `texto_${generation.style}_${generation.id}.txt`
+                        )} 
+                        className="h-8 w-8 md:h-10 md:w-10 border-primary/30 text-primary hover:bg-primary hover:text-primary-foreground hover:border-primary transition-colors"
+                      >
+                        <Download className="h-3 w-3 md:h-4 md:w-4"/>
+                        <span className="sr-only">Baixar</span>
+                      </Button>
+                    </div>
                   </div>
                 </CardContent>
               </Card>
@@ -662,7 +573,7 @@ export default function Home() {
             <span className="text-gradient-primary font-semibold">Texto Maestro</span> &copy; {new Date().getFullYear()}
           </div>
           <p className="text-[10px] md:text-sm mb-2">
-            Transformando texto comum em obras-primas com IA
+            Transformando ideias em obras-primas com IA
           </p>
           <div className="text-[10px] md:text-sm mb-3">
             Desenvolvido por <span className="font-medium">Pedro Van-lume</span>
@@ -680,4 +591,4 @@ export default function Home() {
       </footer>
     </div>
   );
-}
+} 
