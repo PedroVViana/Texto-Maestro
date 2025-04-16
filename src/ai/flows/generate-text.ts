@@ -105,7 +105,8 @@ const generateTextPrompt = ai.definePrompt({
         .describe('O estilo a ser usado para a geração do texto.'),
       styleInstructions: z.string().describe('Instruções específicas para o estilo.'),
       lengthInstructions: z.string().describe('Instruções sobre o comprimento do texto.'),
-      additionalInstructions: z.string().optional().describe('Instruções adicionais para personalizar a geração do texto.')
+      additionalInstructions: z.string().optional().describe('Instruções adicionais para personalizar a geração do texto.'),
+      targetSentiment: z.enum(['Positivo', 'Neutro', 'Negativo']).optional().describe('O sentimento alvo para o texto gerado.')
     }),
   },
   output: {
@@ -122,6 +123,20 @@ INSTRUÇÕES DE ESTILO:
 
 INSTRUÇÕES DE COMPRIMENTO:
 {{{lengthInstructions}}}
+
+{{#if targetSentiment}}
+SENTIMENTO DO TEXTO:
+O texto deve ter um tom claramente {{targetSentiment}}. 
+{{#if (eq targetSentiment "Positivo")}}
+Use linguagem otimista, esperançosa e animadora. Enfatize aspectos positivos, soluções, sucessos e possibilidades. Evite focar em problemas, falhas ou aspectos negativos, a menos que seja para destacar como foram superados.
+{{/if}}
+{{#if (eq targetSentiment "Negativo")}}
+Use linguagem pessimista, crítica ou sombria. Enfatize problemas, desafios, falhas ou aspectos negativos do tema. Evite tom otimista e soluções simples. Explore as consequências negativas ou ameaças relacionadas ao tema. O texto deve transmitir claramente um sentimento de preocupação, crítica ou ceticismo.
+{{/if}}
+{{#if (eq targetSentiment "Neutro")}}
+Mantenha um tom equilibrado e objetivo, apresentando fatos e argumentos sem viés emocional excessivo. Evite linguagem excessivamente positiva ou negativa. Apresente diferentes perspectivas de forma balanceada.
+{{/if}}
+{{/if}}
 
 DIRETRIZES ADICIONAIS:
 1. O texto deve ser escrito exclusivamente em português brasileiro.
@@ -147,12 +162,30 @@ const generateTextFlow = ai.defineFlow<typeof GenerateTextInputSchema, typeof Ge
     const styleInstructions = getStyleInstructions(input.style as StyleType);
     const lengthInstructions = getLengthInstructions(input.length as LengthType);
     
+    // Extrair o sentimento das instruções adicionais, se existir
+    let targetSentiment: 'Positivo' | 'Neutro' | 'Negativo' | undefined = undefined;
+    
+    if (input.additionalInstructions) {
+      // Procurar por padrões como "sentimento predominantemente negativo"
+      if (input.additionalInstructions.toLowerCase().includes('sentimento predominantemente positivo') || 
+          input.additionalInstructions.toLowerCase().includes('tom positivo')) {
+        targetSentiment = 'Positivo';
+      } else if (input.additionalInstructions.toLowerCase().includes('sentimento predominantemente negativo') || 
+                 input.additionalInstructions.toLowerCase().includes('tom negativo')) {
+        targetSentiment = 'Negativo';
+      } else if (input.additionalInstructions.toLowerCase().includes('sentimento predominantemente neutro') || 
+                 input.additionalInstructions.toLowerCase().includes('tom neutro')) {
+        targetSentiment = 'Neutro';
+      }
+    }
+    
     const {output} = await generateTextPrompt({
       topic: input.topic,
       style: input.style,
       styleInstructions,
       lengthInstructions,
-      additionalInstructions: input.additionalInstructions
+      additionalInstructions: input.additionalInstructions,
+      targetSentiment
     });
     
     return output!;

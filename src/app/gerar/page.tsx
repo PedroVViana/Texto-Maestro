@@ -4,7 +4,7 @@ import {GenerateTextInput, generateText} from "@/ai/flows/generate-text";
 import {Button} from "@/components/ui/button";
 import {Textarea} from "@/components/ui/textarea";
 import {Select, SelectContent, SelectItem, SelectTrigger, SelectValue} from "@/components/ui/select";
-import {useState, useEffect} from "react";
+import {useState, useEffect, Suspense} from "react";
 import {Card, CardContent, CardDescription, CardHeader, CardTitle} from "@/components/ui/card";
 import {useToast} from "@/hooks/use-toast";
 import {
@@ -24,6 +24,7 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
+import { useSearchParams } from "next/navigation";
 
 const textStyles = [
   "Formal",
@@ -71,12 +72,15 @@ interface TextAnalysis {
 
 interface AdvancedConfig {
   targetCharCount: number;
+  targetWordCount: number;
   targetReadTime: number;
   targetSentiment: 'Positivo' | 'Neutro' | 'Negativo' | 'Não definir';
   enableAdvancedOptions: boolean;
 }
 
-export default function GeneratePage() {
+// Componente principal que usa useSearchParams
+function GeneratePageContent() {
+  const searchParams = useSearchParams();
   const [topic, setTopic] = useState("");
   const [style, setStyle] = useState<TextStyle>(textStyles[0]);
   const [length, setLength] = useState<TextLength>(textLengths[1]);
@@ -85,6 +89,7 @@ export default function GeneratePage() {
   const [textAnalysis, setTextAnalysis] = useState<TextAnalysis | null>(null);
   const [advancedConfig, setAdvancedConfig] = useState<AdvancedConfig>({
     targetCharCount: 500,
+    targetWordCount: 100,
     targetReadTime: 3,
     targetSentiment: 'Não definir',
     enableAdvancedOptions: false
@@ -138,6 +143,10 @@ export default function GeneratePage() {
       if (advancedConfig.enableAdvancedOptions) {
         if (advancedConfig.targetCharCount > 0) {
           additionalInstructions += `\nMantenha o texto com aproximadamente ${advancedConfig.targetCharCount} caracteres.`;
+        }
+        
+        if (advancedConfig.targetWordCount > 0) {
+          additionalInstructions += `\nMantenha o texto com aproximadamente ${advancedConfig.targetWordCount} palavras.`;
         }
         
         if (advancedConfig.targetReadTime > 0) {
@@ -259,19 +268,19 @@ export default function GeneratePage() {
         </div>
         
         <div className="flex items-center justify-center gap-1 md:gap-2 mb-2 mt-4">
-          <PenTool size={28} className="text-primary animate-float hidden sm:block md:text-3xl" />
-          <h1 className="text-gradient text-3xl sm:text-4xl md:text-5xl font-bold tracking-tight">
+          <PenTool size={24} className="text-primary animate-float block md:text-3xl" />
+          <h1 className="text-gradient text-2xl sm:text-3xl md:text-5xl font-bold tracking-tight">
             Criar Texto
           </h1>
-          <Sparkles size={20} className="text-accent animate-float hidden sm:block md:text-2xl" />
+          <Sparkles size={18} className="text-accent animate-float block md:text-2xl" />
         </div>
         <p className="text-sm md:text-lg text-muted-foreground px-2 text-center">
           Gere textos criativos para qualquer tópico com inteligência artificial
         </p>
       </div>
 
-      <Card className="w-full max-w-xs sm:max-w-md md:max-w-2xl p-3 md:p-4 shadow-lg card-glass">
-        <CardHeader className="p-3 md:p-6">
+      <Card className="w-full max-w-xs sm:max-w-md md:max-w-2xl p-2 sm:p-3 md:p-4 shadow-lg card-glass">
+        <CardHeader className="p-2 sm:p-3 md:p-6">
           <CardTitle className="flex items-center gap-2 text-lg md:text-xl">
             <FileText className="h-4 w-4 md:h-5 md:w-5 text-primary" />
             <span className="text-gradient-primary">Gerador de Texto</span>
@@ -280,7 +289,7 @@ export default function GeneratePage() {
             Insira um tópico ou prompt para criar um texto completo automaticamente.
           </CardDescription>
         </CardHeader>
-        <CardContent className="grid gap-3 md:gap-4 p-3 md:p-6 pt-0 md:pt-0">
+        <CardContent className="grid gap-2 sm:gap-3 md:gap-4 p-2 sm:p-3 md:p-6 pt-0 md:pt-0">
           <div className="grid gap-2">
             <Textarea
               placeholder="Digite um tópico ou ideia para gerar um texto..."
@@ -296,7 +305,7 @@ export default function GeneratePage() {
                   <span>Análise de Prompt</span>
                 </div>
                 
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-x-3 gap-y-1.5">
+                <div className="grid grid-cols-1 xs:grid-cols-2 md:grid-cols-4 gap-x-3 gap-y-1.5">
                   <div className="flex items-center gap-1">
                     <span className="text-muted-foreground">Palavras:</span>
                     <span className="font-medium">{textAnalysis.wordCount}</span>
@@ -396,6 +405,20 @@ export default function GeneratePage() {
                   </div>
                   
                   <div className="space-y-2">
+                    <Label className="text-xs">Quantidade de palavras: {advancedConfig.targetWordCount}</Label>
+                    <Slider 
+                      defaultValue={[advancedConfig.targetWordCount]} 
+                      max={500} 
+                      step={10}
+                      min={20}
+                      onValueChange={(value) => setAdvancedConfig({
+                        ...advancedConfig,
+                        targetWordCount: value[0]
+                      })}
+                    />
+                  </div>
+                  
+                  <div className="space-y-2">
                     <Label className="text-xs">Tempo de leitura (minutos): {advancedConfig.targetReadTime}</Label>
                     <Slider 
                       defaultValue={[advancedConfig.targetReadTime]} 
@@ -417,7 +440,7 @@ export default function GeneratePage() {
                         ...advancedConfig,
                         targetSentiment: value as 'Positivo' | 'Neutro' | 'Negativo' | 'Não definir'
                       })}
-                      className="flex gap-4"
+                      className="flex flex-wrap gap-2 sm:gap-4"
                     >
                       <div className="flex items-center space-x-1">
                         <RadioGroupItem value="Positivo" id="positive-gen" />
@@ -590,5 +613,23 @@ export default function GeneratePage() {
         </div>
       </footer>
     </div>
+  );
+}
+
+// Componente de fallback simples para o Suspense
+function LoadingGeneratePage() {
+  return (
+    <div className="flex items-center justify-center min-h-screen">
+      <div className="animate-spin h-10 w-10 border-4 border-primary border-t-transparent rounded-full"></div>
+    </div>
+  );
+}
+
+// Componente principal que exportamos, envolvido com Suspense
+export default function GeneratePage() {
+  return (
+    <Suspense fallback={<LoadingGeneratePage />}>
+      <GeneratePageContent />
+    </Suspense>
   );
 } 

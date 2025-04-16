@@ -27,6 +27,10 @@ const RewriteTextInputSchema = z.object({
       'SEO optimized',
     ])
     .describe('The style to use for rewriting the text.'),
+  targetCharCount: z.number().optional().describe('The target character count for the rewritten text.'),
+  targetWordCount: z.number().optional().describe('The target word count for the rewritten text.'),
+  targetReadTime: z.number().optional().describe('The target reading time in minutes for the rewritten text.'),
+  targetSentiment: z.enum(['Positivo', 'Neutro', 'Negativo']).optional().describe('The target sentiment for the rewritten text.'),
   additionalInstructions: z.string().optional().describe('Additional instructions for customizing the rewrite.')
 });
 export type RewriteTextInput = z.infer<typeof RewriteTextInputSchema>;
@@ -90,6 +94,10 @@ const rewriteTextPrompt = ai.definePrompt({
         ])
         .describe('The style to use for rewriting the text.'),
       styleInstructions: z.string().describe('Instructions for the specific style.'),
+      targetCharCount: z.number().optional().describe('The target character count for the rewritten text.'),
+      targetWordCount: z.number().optional().describe('The target word count for the rewritten text.'),
+      targetReadTime: z.number().optional().describe('The target reading time in minutes for the rewritten text.'),
+      targetSentiment: z.enum(['Positivo', 'Neutro', 'Negativo']).optional().describe('The target sentiment for the rewritten text.'),
       additionalInstructions: z.string().optional().describe('Additional instructions for customizing the rewrite.')
     }),
   },
@@ -106,8 +114,20 @@ INSTRUÇÕES:
 3. Preserve o significado principal do texto original.
 4. Não adicione informações que não estejam no original, a menos que seja necessário para o estilo solicitado.
 5. Não gere traduções, apenas reescreva o texto.
+{{#if targetCharCount}}
+6. O texto reescrito deve ter aproximadamente {{{targetCharCount}}} caracteres.
+{{/if}}
+{{#if targetWordCount}}
+7. O texto reescrito deve ter aproximadamente {{{targetWordCount}}} palavras.
+{{/if}}
+{{#if targetReadTime}}
+8. O texto reescrito deve ser legível em aproximadamente {{{targetReadTime}}} minutos.
+{{/if}}
+{{#if targetSentiment}}
+9. O tom do texto deve ser {{{targetSentiment}}}.
+{{/if}}
 {{#if additionalInstructions}}
-6. Instruções adicionais: {{{additionalInstructions}}}
+10. Instruções adicionais: {{{additionalInstructions}}}
 {{/if}}
 
 Texto original: {{{text}}}
@@ -127,6 +147,10 @@ const rewriteTextFlow = ai.defineFlow<typeof RewriteTextInputSchema, typeof Rewr
       text: input.text,
       style: input.style,
       styleInstructions,
+      targetCharCount: input.targetCharCount,
+      targetWordCount: input.targetWordCount,
+      targetReadTime: input.targetReadTime,
+      targetSentiment: input.targetSentiment,
       additionalInstructions: input.additionalInstructions
     });
     return output!;

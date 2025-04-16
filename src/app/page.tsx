@@ -356,26 +356,26 @@ function HomeContent() {
           </Link>
         </div>
         <div className="flex items-center justify-center gap-1 md:gap-2 mb-2">
-          <Wand size={28} className="text-primary animate-float hidden sm:block md:text-3xl" />
-          <h1 className="text-gradient text-3xl sm:text-4xl md:text-5xl font-bold tracking-tight">
+          <Wand size={24} className="text-primary animate-float block md:text-3xl" />
+          <h1 className="text-gradient text-2xl sm:text-3xl md:text-5xl font-bold tracking-tight">
             Texto Maestro
           </h1>
-          <Sparkles size={20} className="text-accent animate-float hidden sm:block md:text-2xl" />
+          <Sparkles size={18} className="text-accent animate-float block md:text-2xl" />
         </div>
         <p className="text-sm md:text-lg text-muted-foreground px-2">
           Transforme e aprimore seus textos com inteligência artificial
         </p>
       </div>
 
-      <Card className="w-full max-w-xs sm:max-w-md md:max-w-2xl p-3 md:p-4 shadow-lg card-glass">
-        <CardHeader className="p-3 md:p-6">
+      <Card className="w-full max-w-xs sm:max-w-md md:max-w-2xl p-2 sm:p-3 md:p-4 shadow-lg card-glass">
+        <CardHeader className="p-2 sm:p-3 md:p-6">
           <CardTitle className="flex items-center gap-2 text-lg md:text-xl">
             <FileText className="h-4 w-4 md:h-5 md:w-5 text-primary" />
             <span className="text-gradient-primary">Editor de Texto</span>
           </CardTitle>
           <CardDescription className="text-xs md:text-sm">Insira o texto que você deseja reescrever.</CardDescription>
         </CardHeader>
-        <CardContent className="grid gap-3 md:gap-4 p-3 md:p-6 pt-0 md:pt-0">
+        <CardContent className="grid gap-2 sm:gap-3 md:gap-4 p-2 sm:p-3 md:p-6 pt-0 md:pt-0">
           <div className="grid gap-2">
             <Textarea
               placeholder="Digite seu texto aqui..."
@@ -391,7 +391,7 @@ function HomeContent() {
                   <span>Análise de Texto</span>
                 </div>
                 
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-x-3 gap-y-1.5">
+                <div className="grid grid-cols-1 xs:grid-cols-2 md:grid-cols-3 gap-x-3 gap-y-1.5">
                   <div className="flex items-center gap-1">
                     <span className="text-muted-foreground">Palavras:</span>
                     <span className="font-medium">{textAnalysis.wordCount}</span>
@@ -512,7 +512,7 @@ function HomeContent() {
                         ...advancedConfig,
                         targetSentiment: value as 'Positivo' | 'Neutro' | 'Negativo' | 'Manter original'
                       })}
-                      className="flex gap-4"
+                      className="flex flex-wrap gap-2 sm:gap-4"
                     >
                       <div className="flex items-center space-x-1">
                         <RadioGroupItem value="Positivo" id="positive" />
@@ -598,7 +598,7 @@ function HomeContent() {
                         <span>Análise do Texto Reescrito</span>
                       </div>
                       
-                      <div className="grid grid-cols-2 md:grid-cols-3 gap-x-3 gap-y-1.5">
+                      <div className="grid grid-cols-1 xs:grid-cols-2 md:grid-cols-3 gap-x-3 gap-y-1.5">
                         <div className="flex items-center gap-1">
                           <span className="text-muted-foreground">Palavras:</span>
                           <span className="font-medium">{result.analysis.wordCount}</span>
@@ -627,12 +627,12 @@ function HomeContent() {
                     </div>
                   )}
 
-                  <div className="flex justify-end gap-2">
+                  <div className="flex justify-end gap-2 mt-1">
                     <Button 
                       variant="outline" 
                       size="icon" 
                       onClick={() => handleCopy(result.rewrittenText)} 
-                      className="h-8 w-8 md:h-10 md:w-10 border-accent/30 text-accent hover:bg-accent hover:text-accent-foreground hover:border-accent transition-colors"
+                      className="h-7 w-7 sm:h-8 sm:w-8 md:h-10 md:w-10 border-accent/30 text-accent hover:bg-accent hover:text-accent-foreground hover:border-accent transition-colors"
                     >
                       <Copy className="h-3 w-3 md:h-4 md:w-4"/>
                       <span className="sr-only">Copiar</span>
@@ -644,7 +644,7 @@ function HomeContent() {
                         result.rewrittenText, 
                         `texto_${rewriteStyleTranslations[result.style] || result.style}_${result.id}.txt`
                       )} 
-                      className="h-8 w-8 md:h-10 md:w-10 border-primary/30 text-primary hover:bg-primary hover:text-primary-foreground hover:border-primary transition-colors"
+                      className="h-7 w-7 sm:h-8 sm:w-8 md:h-10 md:w-10 border-primary/30 text-primary hover:bg-primary hover:text-primary-foreground hover:border-primary transition-colors"
                     >
                       <Download className="h-3 w-3 md:h-4 md:w-4"/>
                       <span className="sr-only">Baixar</span>
