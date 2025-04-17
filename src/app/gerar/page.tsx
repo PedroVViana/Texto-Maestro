@@ -25,6 +25,9 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
 import { useSearchParams } from "next/navigation";
+import { UserMenu } from "@/components/Auth/UserMenu";
+import { Navbar } from "@/components/Navbar";
+import { useAuth } from "@/components/Auth/AuthProvider";
 
 const textStyles = [
   "Formal",
@@ -60,6 +63,8 @@ interface TextGeneration {
     charCount: number;
     sentenceCount: number;
     readTime: number;
+    sentimentScore?: number;
+    sentimentLabel?: 'Positivo' | 'Neutro' | 'Negativo';
   };
 }
 
@@ -68,13 +73,14 @@ interface TextAnalysis {
   charCount: number;
   sentenceCount: number;
   readTime: number;
+  sentimentScore?: number;
+  sentimentLabel?: 'Positivo' | 'Neutro' | 'Negativo';
 }
 
 interface AdvancedConfig {
   targetCharCount: number;
   targetWordCount: number;
   targetReadTime: number;
-  targetSentiment: 'Positivo' | 'Neutro' | 'Negativo' | 'Não definir';
   enableAdvancedOptions: boolean;
 }
 
@@ -87,11 +93,11 @@ function GeneratePageContent() {
   const [textGenerations, setTextGenerations] = useState<TextGeneration[]>([]);
   const [loading, setLoading] = useState(false);
   const [textAnalysis, setTextAnalysis] = useState<TextAnalysis | null>(null);
+  const { user } = useAuth();
   const [advancedConfig, setAdvancedConfig] = useState<AdvancedConfig>({
     targetCharCount: 500,
     targetWordCount: 100,
     targetReadTime: 3,
-    targetSentiment: 'Não definir',
     enableAdvancedOptions: false
   });
   const {toast} = useToast();
@@ -137,10 +143,17 @@ function GeneratePageContent() {
     
     setLoading(true);
     try {
-      // Configurar instruções adicionais baseadas nas configurações avançadas
-      let additionalInstructions = "";
+      // Preparar input básico
+      const input: GenerateTextInput = {
+        topic: topic,
+        style: style,
+        length: length,
+      };
       
+      // Adicionar instruções adicionais apenas se as configurações avançadas estiverem ativadas
       if (advancedConfig.enableAdvancedOptions) {
+        let additionalInstructions = "";
+        
         if (advancedConfig.targetCharCount > 0) {
           additionalInstructions += `\nMantenha o texto com aproximadamente ${advancedConfig.targetCharCount} caracteres.`;
         }
@@ -153,18 +166,13 @@ function GeneratePageContent() {
           additionalInstructions += `\nEscreva de forma que o tempo de leitura seja de aproximadamente ${advancedConfig.targetReadTime} minutos.`;
         }
         
-        if (advancedConfig.targetSentiment !== 'Não definir') {
-          additionalInstructions += `\nO texto deve expressar um sentimento predominantemente ${advancedConfig.targetSentiment.toLowerCase()}.`;
+        // Adicionar instruções adicionais apenas se existirem
+        if (additionalInstructions) {
+          input.additionalInstructions = additionalInstructions.trim();
         }
       }
       
-      const input: GenerateTextInput = {
-        topic: topic,
-        style: style,
-        length: length,
-        additionalInstructions: additionalInstructions || undefined
-      };
-      
+      // Chamar a API para gerar o texto
       const result = await generateText(input);
       
       // Análise do texto gerado
@@ -182,6 +190,23 @@ function GeneratePageContent() {
       };
       
       setTextGenerations(prev => [newGeneration, ...prev]);
+      
+      // Salvar no localStorage se o usuário estiver logado
+      if (user) {
+        try {
+          // Pegar os resultados existentes
+          const savedGenerations = localStorage.getItem('textGenerations');
+          let allGenerations = savedGenerations ? JSON.parse(savedGenerations) : [];
+          
+          // Adicionar o novo resultado
+          allGenerations = [newGeneration, ...allGenerations];
+          
+          // Salvar de volta no localStorage
+          localStorage.setItem('textGenerations', JSON.stringify(allGenerations));
+        } catch (error) {
+          console.error('Erro ao salvar texto gerado:', error);
+        }
+      }
       
       toast({
         title: "Texto gerado",
@@ -211,11 +236,77 @@ function GeneratePageContent() {
     // Tempo de leitura (considerando 200 palavras por minuto)
     const readTime = Math.max(1, Math.ceil(wordCount / 200));
     
+    // Análise mais robusta de sentimento
+    let sentimentScore = 0;
+    // Lista expandida de palavras positivas e negativas
+    const positiveWords = [
+      'bom', 'ótimo', 'excelente', 'incrível', 'feliz', 'positivo', 'maravilhoso', 'sucesso', 
+      'perfeito', 'melhor', 'eficaz', 'benefício', 'vantagem', 'promissor', 'esperança', 
+      'solução', 'inovação', 'vencer', 'alegria', 'prazer', 'satisfação', 'agradável', 'bonito', 
+      'satisfatório', 'elogio', 'avanço', 'progresso', 'conquista', 'vitória', 'facilidade', 
+      'ganho', 'crescimento', 'oportunidade', 'recompensa', 'celebração', 'êxito', 'triunfo', 
+      'beleza', 'admirável', 'encantador', 'inspirador', 'eficiente', 'favorável', 'gratificante'
+    ];
+    
+    const negativeWords = [
+      'ruim', 'péssimo', 'terrível', 'horrível', 'triste', 'negativo', 'fracasso', 'defeito', 
+      'problema', 'falha', 'risco', 'perigo', 'preocupação', 'crise', 'dificuldade', 'limitação', 
+      'conflito', 'perda', 'dano', 'erro', 'prejuízo', 'mal', 'desvantagem', 'adversidade', 
+      'obstáculo', 'queda', 'decepção', 'insatisfação', 'inadequado', 'ineficaz', 'ineficiente', 
+      'desastre', 'catástrofe', 'destruição', 'ameaça', 'trauma', 'colapso', 'derrota', 'falência',
+      'crítica', 'questionável', 'insuficiente', 'lamentável', 'indesejável', 'decadente', 'caos'
+    ];
+    
+    const words = text.toLowerCase().split(/\s+/);
+    let positiveCount = 0;
+    let negativeCount = 0;
+    
+    words.forEach(word => {
+      if (positiveWords.some(pw => word.includes(pw))) {
+        positiveCount++;
+        sentimentScore++;
+      }
+      if (negativeWords.some(nw => word.includes(nw))) {
+        negativeCount++;
+        sentimentScore--;
+      }
+    });
+    
+    // Calcular percentual de palavras de sentimento em relação ao total
+    const totalWords = words.length;
+    const positivePercentage = (positiveCount / totalWords) * 100;
+    const negativePercentage = (negativeCount / totalWords) * 100;
+    
+    // Usar porcentagens para determinar o sentimento de forma mais precisa
+    // Se uma grande porcentagem do texto tiver palavras negativas, ele deve ser classificado como negativo
+    // mesmo que haja algumas palavras positivas
+    
+    let sentimentLabel: 'Positivo' | 'Neutro' | 'Negativo' = 'Neutro';
+    
+    // Ajustar limiares para melhor detecção
+    if (sentimentScore > 3 || positivePercentage > 5) sentimentLabel = 'Positivo';
+    if (sentimentScore < -3 || negativePercentage > 5) sentimentLabel = 'Negativo';
+    
+    // Verificação de casos extremos
+    if (negativePercentage > 10 && negativePercentage > positivePercentage * 1.5) {
+      sentimentLabel = 'Negativo';
+    } else if (positivePercentage > 10 && positivePercentage > negativePercentage * 1.5) {
+      sentimentLabel = 'Positivo';
+    }
+    
+    // Análise contextual para textos curtos
+    // Se o texto for curto, damos mais peso para cada palavra de sentimento
+    if (wordCount < 100 && sentimentScore !== 0) {
+      sentimentLabel = sentimentScore > 0 ? 'Positivo' : 'Negativo';
+    }
+    
     return {
       wordCount,
       charCount,
       sentenceCount,
-      readTime
+      readTime,
+      sentimentScore,
+      sentimentLabel
     };
   };
 
@@ -250,16 +341,33 @@ function GeneratePageContent() {
     }).format(date);
   };
 
+  const renderSentimentBadge = (sentiment: 'Positivo' | 'Neutro' | 'Negativo') => {
+    let badgeClass = 'px-1.5 py-0.5 rounded text-xs font-medium ';
+    
+    if (sentiment === 'Positivo') {
+      badgeClass += 'bg-green-100 text-green-800 dark:bg-green-800/20 dark:text-green-300';
+    } else if (sentiment === 'Negativo') {
+      badgeClass += 'bg-red-100 text-red-800 dark:bg-red-800/20 dark:text-red-300';
+    } else {
+      badgeClass += 'bg-blue-100 text-blue-800 dark:bg-blue-800/20 dark:text-blue-300';
+    }
+    
+    return <span className={badgeClass}>{sentiment}</span>;
+  };
+
   return (
-    <div className="relative flex flex-col items-center justify-start min-h-screen bg-pattern px-4 py-6 md:py-8">
+    <div className="relative flex flex-col items-center justify-start min-h-screen bg-pattern px-4 pt-20 pb-6 md:pb-8">
       {/* Elementos de fundo */}
       <div className="grain-overlay"></div>
       <div className="fixed top-[10%] right-[10%] w-24 h-24 md:w-32 md:h-32 rounded-full bg-primary/20 blur-3xl opacity-50"></div>
       <div className="fixed bottom-[10%] left-[10%] w-28 h-28 md:w-40 md:h-40 rounded-full bg-accent/20 blur-3xl opacity-50"></div>
       <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-40 h-40 md:w-60 md:h-60 rounded-full bg-secondary/10 blur-3xl opacity-30"></div>
       
+      {/* Barra de navegação */}
+      <Navbar />
+      
       {/* Título Principal */}
-      <div className="w-full max-w-2xl mb-6 mt-4 md:mb-8 md:mt-8 px-2">
+      <div className="w-full max-w-2xl mb-6 mt-4 md:mb-8 md:mt-8 px-2 fade-in-up">
         <div className="flex justify-between items-center">
           <Link href="/" className="flex items-center gap-1 text-primary hover:text-accent transition-colors">
             <ArrowLeft className="h-4 w-4 md:h-5 md:w-5" />
@@ -279,7 +387,7 @@ function GeneratePageContent() {
         </p>
       </div>
 
-      <Card className="w-full max-w-xs sm:max-w-md md:max-w-2xl p-2 sm:p-3 md:p-4 shadow-lg card-glass">
+      <Card className="w-full max-w-xs sm:max-w-md md:max-w-2xl p-2 sm:p-3 md:p-4 shadow-lg card-glass fade-in-up" style={{animationDelay: "0.1s"}}>
         <CardHeader className="p-2 sm:p-3 md:p-6">
           <CardTitle className="flex items-center gap-2 text-lg md:text-xl">
             <FileText className="h-4 w-4 md:h-5 md:w-5 text-primary" />
@@ -380,10 +488,17 @@ function GeneratePageContent() {
                     type="checkbox" 
                     id="enable-advanced" 
                     checked={advancedConfig.enableAdvancedOptions}
-                    onChange={(e) => setAdvancedConfig({
-                      ...advancedConfig,
-                      enableAdvancedOptions: e.target.checked
-                    })}
+                    onChange={(e) => {
+                      // Atualizar o estado diretamente
+                      setAdvancedConfig({
+                        ...advancedConfig,
+                        enableAdvancedOptions: e.target.checked,
+                        // Se estiver sendo desativado, resetar valores para defaults
+                        targetCharCount: e.target.checked ? advancedConfig.targetCharCount : 500,
+                        targetWordCount: e.target.checked ? advancedConfig.targetWordCount : 100,
+                        targetReadTime: e.target.checked ? advancedConfig.targetReadTime : 3,
+                      });
+                    }}
                     className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
                   />
                   <Label htmlFor="enable-advanced" className="text-xs">Ativar configurações avançadas</Label>
@@ -431,35 +546,6 @@ function GeneratePageContent() {
                       })}
                     />
                   </div>
-                  
-                  <div className="space-y-2">
-                    <Label className="text-xs">Sentimento do texto:</Label>
-                    <RadioGroup 
-                      defaultValue={advancedConfig.targetSentiment}
-                      onValueChange={(value) => setAdvancedConfig({
-                        ...advancedConfig,
-                        targetSentiment: value as 'Positivo' | 'Neutro' | 'Negativo' | 'Não definir'
-                      })}
-                      className="flex flex-wrap gap-2 sm:gap-4"
-                    >
-                      <div className="flex items-center space-x-1">
-                        <RadioGroupItem value="Positivo" id="positive-gen" />
-                        <Label htmlFor="positive-gen" className="text-xs">Positivo</Label>
-                      </div>
-                      <div className="flex items-center space-x-1">
-                        <RadioGroupItem value="Neutro" id="neutral-gen" />
-                        <Label htmlFor="neutral-gen" className="text-xs">Neutro</Label>
-                      </div>
-                      <div className="flex items-center space-x-1">
-                        <RadioGroupItem value="Negativo" id="negative-gen" />
-                        <Label htmlFor="negative-gen" className="text-xs">Negativo</Label>
-                      </div>
-                      <div className="flex items-center space-x-1">
-                        <RadioGroupItem value="Não definir" id="none-gen" />
-                        <Label htmlFor="none-gen" className="text-xs">Não definir</Label>
-                      </div>
-                    </RadioGroup>
-                  </div>
                 </div>
               </AccordionContent>
             </AccordionItem>
@@ -468,7 +554,7 @@ function GeneratePageContent() {
           <Button 
             onClick={handleGenerate} 
             disabled={loading || !topic.trim()} 
-            className="bg-accent text-white hover:shadow-lg transition-all duration-300 hover:bg-accent/90 h-9 md:h-10 text-xs md:text-sm"
+            className="bg-accent text-white hover:shadow-lg transition-all duration-300 hover:bg-accent/90 h-9 md:h-10 text-xs md:text-sm ripple pulse-effect"
           >
             {loading ? (
               <span className="flex items-center gap-2">
@@ -486,15 +572,15 @@ function GeneratePageContent() {
       </Card>
 
       {textGenerations.length > 0 && (
-        <div className="w-full max-w-xs sm:max-w-md md:max-w-2xl mt-6">
+        <div className="w-full max-w-xs sm:max-w-md md:max-w-2xl mt-6 fade-in-up" style={{animationDelay: "0.2s"}}>
           <div className="flex items-center gap-2 mb-3 md:mb-4 px-1">
             <Clock className="h-4 w-4 md:h-5 md:w-5 text-primary" />
             <h2 className="text-base md:text-xl font-semibold">Histórico de textos gerados</h2>
           </div>
           
           <div className="space-y-4 md:space-y-6">
-            {textGenerations.map((generation) => (
-              <Card key={generation.id} className="w-full shadow-lg card-glass">
+            {textGenerations.map((generation, index) => (
+              <Card key={generation.id} className="w-full shadow-lg card-glass fade-in-up" style={{animationDelay: `${0.1 * (index + 1)}s`}}>
                 <CardHeader className="pb-1 md:pb-2 p-3 md:p-4">
                   <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-1 sm:gap-0">
                     <CardTitle className="flex items-center gap-1 md:gap-2 text-sm md:text-base">
@@ -546,6 +632,13 @@ function GeneratePageContent() {
                           <span className="text-muted-foreground">Tempo de leitura:</span>
                           <span className="font-medium">{generation.analysis.readTime} min</span>
                         </div>
+                        
+                        {generation.analysis.sentimentLabel && (
+                          <div className="flex items-center gap-1 col-span-2 md:col-span-4 mt-2">
+                            <span className="text-muted-foreground">Sentimento:</span>
+                            {renderSentimentBadge(generation.analysis.sentimentLabel)}
+                          </div>
+                        )}
                       </div>
                     </div>
                   )}
@@ -564,7 +657,7 @@ function GeneratePageContent() {
                         variant="outline" 
                         size="icon" 
                         onClick={() => handleCopy(generation.generatedText)} 
-                        className="h-8 w-8 md:h-10 md:w-10 border-accent/30 text-accent hover:bg-accent hover:text-accent-foreground hover:border-accent transition-colors"
+                        className="h-8 w-8 md:h-10 md:w-10 border-accent/30 text-accent hover:bg-accent hover:text-accent-foreground hover:border-accent transition-colors ripple"
                       >
                         <Copy className="h-3 w-3 md:h-4 md:w-4"/>
                         <span className="sr-only">Copiar</span>
@@ -576,7 +669,7 @@ function GeneratePageContent() {
                           generation.generatedText, 
                           `texto_${generation.style}_${generation.id}.txt`
                         )} 
-                        className="h-8 w-8 md:h-10 md:w-10 border-primary/30 text-primary hover:bg-primary hover:text-primary-foreground hover:border-primary transition-colors"
+                        className="h-8 w-8 md:h-10 md:w-10 border-primary/30 text-primary hover:bg-primary hover:text-primary-foreground hover:border-primary transition-colors ripple"
                       >
                         <Download className="h-3 w-3 md:h-4 md:w-4"/>
                         <span className="sr-only">Baixar</span>

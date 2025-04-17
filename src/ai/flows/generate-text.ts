@@ -30,7 +30,11 @@ const GenerateTextInputSchema = z.object({
   length: z
     .enum(['Curto', 'Médio', 'Longo'])
     .describe('O comprimento desejado do texto.'),
-  additionalInstructions: z.string().optional().describe('Instruções adicionais para personalizar a geração do texto.')
+  targetCharCount: z.number().optional(),
+  targetWordCount: z.number().optional(),
+  targetReadTime: z.number().optional(),
+  targetSentiment: z.enum(['positive', 'negative', 'neutral']).optional(),
+  additionalInstructions: z.string().optional().describe('Instruções adicionais para personalizar a geração do texto.'),
 });
 export type GenerateTextInput = z.infer<typeof GenerateTextInputSchema>;
 
@@ -84,6 +88,21 @@ const getLengthInstructions = (length: LengthType): string => {
   return instructions[length];
 };
 
+const getSentimentInstructions = (sentiment?: string): string => {
+  if (!sentiment) return "";
+  
+  switch (sentiment) {
+    case 'positive':
+      return "O texto deve expressar um sentimento FORTEMENTE POSITIVO, com linguagem entusiasmada, otimista e encorajadora. Use palavras positivas, expressões de alegria e esperança.";
+    case 'negative':
+      return "O texto deve expressar um sentimento FORTEMENTE NEGATIVO, com linguagem crítica, pessimista ou cética. Use palavras que expressem preocupação, dúvida ou problemas.";
+    case 'neutral':
+      return "O texto deve manter um tom ESTRITAMENTE NEUTRO e imparcial, focando apenas nos fatos sem expressar opiniões positivas ou negativas.";
+    default:
+      return "";
+  }
+};
+
 const generateTextPrompt = ai.definePrompt({
   name: 'generateTextPrompt',
   input: {
@@ -106,7 +125,7 @@ const generateTextPrompt = ai.definePrompt({
       styleInstructions: z.string().describe('Instruções específicas para o estilo.'),
       lengthInstructions: z.string().describe('Instruções sobre o comprimento do texto.'),
       additionalInstructions: z.string().optional().describe('Instruções adicionais para personalizar a geração do texto.'),
-      targetSentiment: z.enum(['Positivo', 'Neutro', 'Negativo']).optional().describe('O sentimento alvo para o texto gerado.')
+      sentimentInstructions: z.string().optional().describe('Instruções sobre o sentimento do texto.')
     }),
   },
   output: {
@@ -124,18 +143,9 @@ INSTRUÇÕES DE ESTILO:
 INSTRUÇÕES DE COMPRIMENTO:
 {{{lengthInstructions}}}
 
-{{#if targetSentiment}}
+{{#if sentimentInstructions}}
 SENTIMENTO DO TEXTO:
-O texto deve ter um tom claramente {{targetSentiment}}. 
-{{#if (eq targetSentiment "Positivo")}}
-Use linguagem otimista, esperançosa e animadora. Enfatize aspectos positivos, soluções, sucessos e possibilidades. Evite focar em problemas, falhas ou aspectos negativos, a menos que seja para destacar como foram superados.
-{{/if}}
-{{#if (eq targetSentiment "Negativo")}}
-Use linguagem pessimista, crítica ou sombria. Enfatize problemas, desafios, falhas ou aspectos negativos do tema. Evite tom otimista e soluções simples. Explore as consequências negativas ou ameaças relacionadas ao tema. O texto deve transmitir claramente um sentimento de preocupação, crítica ou ceticismo.
-{{/if}}
-{{#if (eq targetSentiment "Neutro")}}
-Mantenha um tom equilibrado e objetivo, apresentando fatos e argumentos sem viés emocional excessivo. Evite linguagem excessivamente positiva ou negativa. Apresente diferentes perspectivas de forma balanceada.
-{{/if}}
+{{{sentimentInstructions}}}
 {{/if}}
 
 DIRETRIZES ADICIONAIS:
@@ -158,36 +168,60 @@ const generateTextFlow = ai.defineFlow<typeof GenerateTextInputSchema, typeof Ge
     inputSchema: GenerateTextInputSchema,
     outputSchema: GenerateTextOutputSchema,
   },
-  async input => {
-    const styleInstructions = getStyleInstructions(input.style as StyleType);
-    const lengthInstructions = getLengthInstructions(input.length as LengthType);
+  async (input) => {
+    const { topic, style, length, targetCharCount, targetWordCount, targetReadTime, targetSentiment, additionalInstructions } = input;
+
+    // Determinar as instruções de estilo
+    const styleInstructions = getStyleInstructions(style as StyleType);
+
+    // Determinar as instruções de comprimento
+    const lengthInstructions = getLengthInstructions(length as LengthType);
     
-    // Extrair o sentimento das instruções adicionais, se existir
-    let targetSentiment: 'Positivo' | 'Neutro' | 'Negativo' | undefined = undefined;
+    // Determinar as instruções de sentimento
+    const sentimentInstructions = getSentimentInstructions(targetSentiment);
     
-    if (input.additionalInstructions) {
-      // Procurar por padrões como "sentimento predominantemente negativo"
-      if (input.additionalInstructions.toLowerCase().includes('sentimento predominantemente positivo') || 
-          input.additionalInstructions.toLowerCase().includes('tom positivo')) {
-        targetSentiment = 'Positivo';
-      } else if (input.additionalInstructions.toLowerCase().includes('sentimento predominantemente negativo') || 
-                 input.additionalInstructions.toLowerCase().includes('tom negativo')) {
-        targetSentiment = 'Negativo';
-      } else if (input.additionalInstructions.toLowerCase().includes('sentimento predominantemente neutro') || 
-                 input.additionalInstructions.toLowerCase().includes('tom neutro')) {
-        targetSentiment = 'Neutro';
-      }
+    // Instruções específicas de comprimento
+    const targetLengthInstructions = [];
+    
+    if (targetCharCount) {
+      targetLengthInstructions.push(`O texto DEVE ter aproximadamente ${targetCharCount} caracteres no total.`);
     }
     
-    const {output} = await generateTextPrompt({
-      topic: input.topic,
-      style: input.style,
+    if (targetWordCount) {
+      targetLengthInstructions.push(`O texto DEVE ter aproximadamente ${targetWordCount} palavras no total.`);
+    }
+    
+    if (targetReadTime) {
+      targetLengthInstructions.push(`O texto DEVE ser escrito para um tempo de leitura de aproximadamente ${targetReadTime} minutos.`);
+    }
+    
+    const targetLengthText = targetLengthInstructions.length > 0 
+      ? "Instruções específicas de comprimento:\n" + targetLengthInstructions.join("\n")
+      : "";
+
+    // Combinar todas as instruções
+    const allInstructions = [
       styleInstructions,
       lengthInstructions,
-      additionalInstructions: input.additionalInstructions,
-      targetSentiment
+      sentimentInstructions,
+      targetLengthText,
+      additionalInstructions
+    ]
+      .filter(Boolean)
+      .join('\n\n');
+
+    // Gerar o texto
+    const result = await generateTextPrompt({
+      topic,
+      style,
+      styleInstructions: allInstructions,
+      lengthInstructions: "",
+      additionalInstructions: "",
+      sentimentInstructions: ""
     });
-    
-    return output!;
+
+    return {
+      generatedText: result.output!.generatedText
+    };
   }
 ); 

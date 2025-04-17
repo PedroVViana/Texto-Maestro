@@ -27,6 +27,9 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
+import { UserMenu } from "@/components/Auth/UserMenu";
+import { Navbar } from "@/components/Navbar";
+import { useAuth } from "@/components/Auth/AuthProvider";
 
 const rewriteStyles = [
   "Grammar correction",
@@ -74,11 +77,9 @@ interface TextAnalysis {
 }
 
 interface AdvancedConfig {
-  targetCharCount: number;
-  targetWordCount: number;
-  targetReadTime: number;
-  targetSentiment: 'Positivo' | 'Neutro' | 'Negativo' | 'Manter original';
-  enableAdvancedOptions: boolean;
+  targetCharCount?: number;
+  targetReadTime?: number;
+  targetWordCount?: number;
 }
 
 // Componente principal que usa useSearchParams
@@ -89,12 +90,11 @@ function HomeContent() {
   const [textResults, setTextResults] = useState<TextResult[]>([]);
   const [loading, setLoading] = useState(false);
   const [textAnalysis, setTextAnalysis] = useState<TextAnalysis | null>(null);
+  const { user } = useAuth();
   const [advancedConfig, setAdvancedConfig] = useState<AdvancedConfig>({
-    targetCharCount: 500,
-    targetWordCount: 100,
-    targetReadTime: 3,
-    targetSentiment: 'Manter original',
-    enableAdvancedOptions: false
+    targetCharCount: undefined,
+    targetReadTime: undefined,
+    targetWordCount: undefined,
   });
   const {toast} = useToast();
 
@@ -162,18 +162,23 @@ function HomeContent() {
     setLoading(true);
     
     try {
+      // Verificar se as configurações avançadas estão ativadas
+      const hasAdvancedConfig = !!advancedConfig.targetCharCount || 
+                               !!advancedConfig.targetReadTime || 
+                               !!advancedConfig.targetWordCount;
+      
+      // Preparar o input com configurações avançadas apenas se estiverem ativadas
       const rewriteInput: RewriteTextInput = {
         text,
         style,
-        ...(advancedConfig.enableAdvancedOptions ? {
-          targetCharCount: advancedConfig.targetCharCount,
-          targetWordCount: advancedConfig.targetWordCount,
-          targetReadTime: advancedConfig.targetReadTime,
-          targetSentiment: advancedConfig.targetSentiment !== "Manter original" 
-            ? advancedConfig.targetSentiment 
-            : undefined
-        } : {})
       };
+      
+      // Adicionar configurações avançadas apenas se estiverem definidas
+      if (hasAdvancedConfig) {
+        if (advancedConfig.targetCharCount) rewriteInput.targetCharCount = advancedConfig.targetCharCount;
+        if (advancedConfig.targetWordCount) rewriteInput.targetWordCount = advancedConfig.targetWordCount;
+        if (advancedConfig.targetReadTime) rewriteInput.targetReadTime = advancedConfig.targetReadTime;
+      }
 
       const response = await fetch('/api/rewrite', {
         method: 'POST',
@@ -210,7 +215,7 @@ function HomeContent() {
         id: generateId(),
         originalText: text,
         rewrittenText: data.rewrittenText,
-        style: rewriteInput.style,
+        style,
         timestamp: new Date(),
         analysis: updatedAnalysis,
         differences
@@ -218,6 +223,23 @@ function HomeContent() {
       
       // Adicionando ao histórico
       setTextResults(prev => [result, ...prev]);
+      
+      // Salvar no localStorage se o usuário estiver logado
+      if (user) {
+        try {
+          // Pegar os resultados existentes
+          const savedResults = localStorage.getItem('textResults');
+          let allResults = savedResults ? JSON.parse(savedResults) : [];
+          
+          // Adicionar o novo resultado
+          allResults = [result, ...allResults];
+          
+          // Salvar de volta no localStorage
+          localStorage.setItem('textResults', JSON.stringify(allResults));
+        } catch (error) {
+          console.error('Erro ao salvar texto:', error);
+        }
+      }
       
       // Notificação de sucesso
       toast({
@@ -340,15 +362,18 @@ function HomeContent() {
   };
 
   return (
-    <div className="relative flex flex-col items-center justify-start min-h-screen bg-pattern px-4 py-6 md:py-8">
+    <div className="relative flex flex-col items-center justify-start min-h-screen bg-pattern px-4 pt-20 pb-6 md:pb-8">
       {/* Elementos de fundo */}
       <div className="grain-overlay"></div>
       <div className="fixed top-[10%] right-[10%] w-24 h-24 md:w-32 md:h-32 rounded-full bg-primary/20 blur-3xl opacity-50"></div>
       <div className="fixed bottom-[10%] left-[10%] w-28 h-28 md:w-40 md:h-40 rounded-full bg-accent/20 blur-3xl opacity-50"></div>
       <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-40 h-40 md:w-60 md:h-60 rounded-full bg-secondary/10 blur-3xl opacity-30"></div>
       
+      {/* Barra de navegação */}
+      <Navbar />
+      
       {/* Título Principal */}
-      <div className="w-full max-w-2xl text-center mb-6 mt-4 md:mb-8 md:mt-8 px-2">
+      <div className="w-full max-w-2xl text-center mb-6 mt-4 md:mb-8 md:mt-8 px-2 fade-in-up">
         <div className="flex justify-end mb-3">
           <Link href="/gerar" className="flex items-center gap-1 text-primary hover:text-accent transition-colors">
             <span className="text-xs md:text-sm">Criar Novo Texto</span>
@@ -367,7 +392,7 @@ function HomeContent() {
         </p>
       </div>
 
-      <Card className="w-full max-w-xs sm:max-w-md md:max-w-2xl p-2 sm:p-3 md:p-4 shadow-lg card-glass">
+      <Card className="w-full max-w-xs sm:max-w-md md:max-w-2xl p-2 sm:p-3 md:p-4 shadow-lg card-glass fade-in-up" style={{animationDelay: "0.1s"}}>
         <CardHeader className="p-2 sm:p-3 md:p-6">
           <CardTitle className="flex items-center gap-2 text-lg md:text-xl">
             <FileText className="h-4 w-4 md:h-5 md:w-5 text-primary" />
@@ -451,86 +476,70 @@ function HomeContent() {
                   <input 
                     type="checkbox" 
                     id="enable-advanced" 
-                    checked={advancedConfig.enableAdvancedOptions}
-                    onChange={(e) => setAdvancedConfig({
-                      ...advancedConfig,
-                      enableAdvancedOptions: e.target.checked
-                    })}
+                    checked={!!advancedConfig.targetCharCount || !!advancedConfig.targetReadTime || !!advancedConfig.targetWordCount}
+                    onChange={(e) => {
+                      if (!e.target.checked) {
+                        // Desativar todas as configurações avançadas
+                        setAdvancedConfig({
+                          targetCharCount: undefined,
+                          targetReadTime: undefined,
+                          targetWordCount: undefined,
+                        });
+                      } else {
+                        // Ativar com valores padrão
+                        setAdvancedConfig({
+                          targetCharCount: 1000,
+                          targetWordCount: 150,
+                          targetReadTime: 5,
+                        });
+                      }
+                    }}
                     className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
                   />
                   <Label htmlFor="enable-advanced" className="text-xs">Ativar configurações avançadas</Label>
                 </div>
                 
-                <div className={`space-y-4 ${!advancedConfig.enableAdvancedOptions ? 'opacity-50 pointer-events-none' : ''}`}>
+                <div className={`space-y-4 ${!advancedConfig.targetCharCount && !advancedConfig.targetReadTime && !advancedConfig.targetWordCount ? 'opacity-50 pointer-events-none' : ''}`}>
                   <div className="space-y-2">
-                    <Label className="text-xs">Tamanho do texto (caracteres): {advancedConfig.targetCharCount}</Label>
+                    <Label className="text-xs">Tamanho do texto (caracteres): {advancedConfig.targetCharCount ?? "Não especificado"}</Label>
                     <Slider 
-                      defaultValue={[advancedConfig.targetCharCount]} 
-                      max={2000} 
+                      defaultValue={[advancedConfig.targetCharCount ?? 0]} 
+                      max={5000} 
                       step={50}
-                      min={100}
+                      min={0}
                       onValueChange={(value) => setAdvancedConfig({
                         ...advancedConfig,
-                        targetCharCount: value[0]
+                        targetCharCount: value[0] === 0 ? undefined : value[0]
                       })}
                     />
                   </div>
                   
                   <div className="space-y-2">
-                    <Label className="text-xs">Quantidade de palavras: {advancedConfig.targetWordCount}</Label>
+                    <Label className="text-xs">Quantidade de palavras: {advancedConfig.targetWordCount ?? "Não especificado"}</Label>
                     <Slider 
-                      defaultValue={[advancedConfig.targetWordCount]} 
-                      max={500} 
+                      defaultValue={[advancedConfig.targetWordCount ?? 0]} 
+                      max={1000} 
                       step={10}
-                      min={20}
+                      min={0}
                       onValueChange={(value) => setAdvancedConfig({
                         ...advancedConfig,
-                        targetWordCount: value[0]
+                        targetWordCount: value[0] === 0 ? undefined : value[0]
                       })}
                     />
                   </div>
                   
                   <div className="space-y-2">
-                    <Label className="text-xs">Tempo de leitura (minutos): {advancedConfig.targetReadTime}</Label>
+                    <Label className="text-xs">Tempo de leitura (minutos): {advancedConfig.targetReadTime ?? "Não especificado"}</Label>
                     <Slider 
-                      defaultValue={[advancedConfig.targetReadTime]} 
-                      max={10} 
+                      defaultValue={[advancedConfig.targetReadTime ?? 0]} 
+                      max={30} 
                       step={1}
-                      min={1}
+                      min={0}
                       onValueChange={(value) => setAdvancedConfig({
                         ...advancedConfig,
-                        targetReadTime: value[0]
+                        targetReadTime: value[0] === 0 ? undefined : value[0]
                       })}
                     />
-                  </div>
-                  
-                  <div className="space-y-2">
-                    <Label className="text-xs">Sentimento do texto:</Label>
-                    <RadioGroup 
-                      defaultValue={advancedConfig.targetSentiment}
-                      onValueChange={(value) => setAdvancedConfig({
-                        ...advancedConfig,
-                        targetSentiment: value as 'Positivo' | 'Neutro' | 'Negativo' | 'Manter original'
-                      })}
-                      className="flex flex-wrap gap-2 sm:gap-4"
-                    >
-                      <div className="flex items-center space-x-1">
-                        <RadioGroupItem value="Positivo" id="positive" />
-                        <Label htmlFor="positive" className="text-xs">Positivo</Label>
-                      </div>
-                      <div className="flex items-center space-x-1">
-                        <RadioGroupItem value="Neutro" id="neutral" />
-                        <Label htmlFor="neutral" className="text-xs">Neutro</Label>
-                      </div>
-                      <div className="flex items-center space-x-1">
-                        <RadioGroupItem value="Negativo" id="negative" />
-                        <Label htmlFor="negative" className="text-xs">Negativo</Label>
-                      </div>
-                      <div className="flex items-center space-x-1">
-                        <RadioGroupItem value="Manter original" id="keep" />
-                        <Label htmlFor="keep" className="text-xs">Manter</Label>
-                      </div>
-                    </RadioGroup>
                   </div>
                 </div>
               </AccordionContent>
@@ -540,7 +549,7 @@ function HomeContent() {
           <Button 
             onClick={handleRewrite} 
             disabled={loading || !text.trim()} 
-            className="bg-accent text-white hover:shadow-lg transition-all duration-300 hover:bg-accent/90 h-9 md:h-10 text-xs md:text-sm"
+            className="bg-accent text-white hover:shadow-lg transition-all duration-300 hover:bg-accent/90 h-9 md:h-10 text-xs md:text-sm ripple pulse-effect"
           >
             {loading ? (
               <span className="flex items-center gap-2">
@@ -558,15 +567,15 @@ function HomeContent() {
       </Card>
 
       {textResults.length > 0 && (
-        <div className="w-full max-w-xs sm:max-w-md md:max-w-2xl mt-6">
+        <div className="w-full max-w-xs sm:max-w-md md:max-w-2xl mt-6 fade-in-up" style={{animationDelay: "0.2s"}}>
           <div className="flex items-center gap-2 mb-3 md:mb-4 px-1">
             <Clock className="h-4 w-4 md:h-5 md:w-5 text-primary" />
             <h2 className="text-base md:text-xl font-semibold">Histórico de textos</h2>
           </div>
           
           <div className="space-y-4 md:space-y-6">
-            {textResults.map((result) => (
-              <Card key={result.id} className="w-full shadow-lg card-glass">
+            {textResults.map((result, index) => (
+              <Card key={result.id} className="w-full shadow-lg card-glass fade-in-up" style={{animationDelay: `${0.1 * (index + 1)}s`}}>
                 <CardHeader className="pb-1 md:pb-2 p-3 md:p-4">
                   <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-1 sm:gap-0">
                     <CardTitle className="flex items-center gap-1 md:gap-2 text-sm md:text-base">
@@ -632,7 +641,7 @@ function HomeContent() {
                       variant="outline" 
                       size="icon" 
                       onClick={() => handleCopy(result.rewrittenText)} 
-                      className="h-7 w-7 sm:h-8 sm:w-8 md:h-10 md:w-10 border-accent/30 text-accent hover:bg-accent hover:text-accent-foreground hover:border-accent transition-colors"
+                      className="h-7 w-7 sm:h-8 sm:w-8 md:h-10 md:w-10 border-accent/30 text-accent hover:bg-accent hover:text-accent-foreground hover:border-accent transition-colors ripple"
                     >
                       <Copy className="h-3 w-3 md:h-4 md:w-4"/>
                       <span className="sr-only">Copiar</span>
@@ -644,7 +653,7 @@ function HomeContent() {
                         result.rewrittenText, 
                         `texto_${rewriteStyleTranslations[result.style] || result.style}_${result.id}.txt`
                       )} 
-                      className="h-7 w-7 sm:h-8 sm:w-8 md:h-10 md:w-10 border-primary/30 text-primary hover:bg-primary hover:text-primary-foreground hover:border-primary transition-colors"
+                      className="h-7 w-7 sm:h-8 sm:w-8 md:h-10 md:w-10 border-primary/30 text-primary hover:bg-primary hover:text-primary-foreground hover:border-primary transition-colors ripple"
                     >
                       <Download className="h-3 w-3 md:h-4 md:w-4"/>
                       <span className="sr-only">Baixar</span>

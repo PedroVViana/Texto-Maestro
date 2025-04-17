@@ -97,7 +97,7 @@ const rewriteTextPrompt = ai.definePrompt({
       targetCharCount: z.number().optional().describe('The target character count for the rewritten text.'),
       targetWordCount: z.number().optional().describe('The target word count for the rewritten text.'),
       targetReadTime: z.number().optional().describe('The target reading time in minutes for the rewritten text.'),
-      targetSentiment: z.enum(['Positivo', 'Neutro', 'Negativo']).optional().describe('The target sentiment for the rewritten text.'),
+      targetSentiment: z.string().optional().describe('The target sentiment for the rewritten text.'),
       additionalInstructions: z.string().optional().describe('Additional instructions for customizing the rewrite.')
     }),
   },
@@ -143,6 +143,10 @@ const rewriteTextFlow = ai.defineFlow<typeof RewriteTextInputSchema, typeof Rewr
   },
   async input => {
     const styleInstructions = getStyleInstructions(input.style as StyleType);
+    
+    // Prepare a formatted targetSentiment if it exists
+    let sentimentInstruction = input.targetSentiment;
+    
     const {output} = await rewriteTextPrompt({
       text: input.text,
       style: input.style,
@@ -150,7 +154,7 @@ const rewriteTextFlow = ai.defineFlow<typeof RewriteTextInputSchema, typeof Rewr
       targetCharCount: input.targetCharCount,
       targetWordCount: input.targetWordCount,
       targetReadTime: input.targetReadTime,
-      targetSentiment: input.targetSentiment,
+      targetSentiment: sentimentInstruction,
       additionalInstructions: input.additionalInstructions
     });
     return output!;

@@ -18,11 +18,29 @@ export async function POST(request: NextRequest) {
     const input: RewriteTextInput = {
       text: body.text,
       style: body.style,
-      ...(body.targetCharCount ? { targetCharCount: body.targetCharCount } : {}),
-      ...(body.targetWordCount ? { targetWordCount: body.targetWordCount } : {}),
-      ...(body.targetReadTime ? { targetReadTime: body.targetReadTime } : {}),
-      ...(body.targetSentiment ? { targetSentiment: body.targetSentiment } : {})
+      targetCharCount: body.targetCharCount,
+      targetReadTime: body.targetReadTime,
+      targetSentiment: body.targetSentiment,
+      targetWordCount: body.targetWordCount,
+      additionalInstructions: body.additionalInstructions
     };
+    
+    // Adicionar configurações opcionais apenas se fornecidas e válidas
+    if (typeof body.targetCharCount === 'number' && body.targetCharCount > 0) {
+      input.targetCharCount = body.targetCharCount;
+    }
+    
+    if (typeof body.targetWordCount === 'number' && body.targetWordCount > 0) {
+      input.targetWordCount = body.targetWordCount;
+    }
+    
+    if (typeof body.targetReadTime === 'number' && body.targetReadTime > 0) {
+      input.targetReadTime = body.targetReadTime;
+    }
+    
+    if (body.targetSentiment && ['Positivo', 'Neutro', 'Negativo'].includes(body.targetSentiment)) {
+      input.targetSentiment = body.targetSentiment;
+    }
     
     // Processar a reescrita do texto
     const result = await rewriteText(input);
