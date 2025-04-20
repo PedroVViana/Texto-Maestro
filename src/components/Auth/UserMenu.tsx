@@ -14,7 +14,7 @@ import {
   DropdownMenuTrigger 
 } from "@/components/ui/dropdown-menu";
 import { User } from "firebase/auth";
-import { Settings, CreditCard } from "lucide-react";
+import { Settings, CreditCard, Home, UserRound, Loader2 } from "lucide-react";
 import Link from "next/link";
 
 export function UserMenu() {
@@ -32,7 +32,9 @@ export function UserMenu() {
 
   if (isLoading) {
     return (
-      <div className="h-10 w-10 rounded-full bg-muted animate-pulse"></div>
+      <div className="flex items-center justify-center h-10 w-10 rounded-full bg-muted">
+        <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+      </div>
     );
   }
 
@@ -53,34 +55,46 @@ export function UserMenu() {
 
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger className="focus:outline-none">
-        <Avatar className="h-10 w-10 cursor-pointer hover:opacity-80 transition-opacity">
-          <AvatarImage src={user.photoURL || undefined} alt={user.displayName || "Usuário"} />
-          <AvatarFallback>{getUserInitials()}</AvatarFallback>
+      <DropdownMenuTrigger className="focus:outline-none group">
+        <Avatar className="h-10 w-10 cursor-pointer transition-all duration-200 group-hover:scale-105 group-hover:ring-2 ring-primary/20 group-focus:ring-2">
+          <AvatarImage 
+            src={user.photoURL || undefined} 
+            alt={user.displayName || "Usuário"} 
+            className="transition-opacity duration-200"
+          />
+          <AvatarFallback className="bg-primary/10 text-primary transition-colors duration-200 group-hover:bg-primary/20">
+            {getUserInitials()}
+          </AvatarFallback>
         </Avatar>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-56">
-        <DropdownMenuLabel>
+      <DropdownMenuContent align="end" className="w-56 overflow-hidden" sideOffset={8}>
+        <DropdownMenuLabel className="p-4 pb-3">
           <div className="flex flex-col space-y-1">
             <p className="text-sm font-medium">{user.displayName || "Usuário"}</p>
             <p className="text-xs text-muted-foreground truncate">{user.email}</p>
           </div>
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
-        <Link href="/configuracoes">
-          <DropdownMenuItem className="cursor-pointer focus:bg-accent flex items-center gap-2">
+        <Link href="/" className="block">
+          <DropdownMenuItem className="cursor-pointer transition-colors duration-150 hover:bg-primary/10 hover:text-primary focus:bg-primary/10 focus:text-primary flex items-center gap-2 p-3">
+            <Home className="h-4 w-4" />
+            <span>Página Principal</span>
+          </DropdownMenuItem>
+        </Link>
+        <Link href="/configuracoes" className="block">
+          <DropdownMenuItem className="cursor-pointer transition-colors duration-150 hover:bg-accent/10 hover:text-accent focus:bg-accent/10 focus:text-accent flex items-center gap-2 p-3">
             <Settings className="h-4 w-4" />
             <span>Configurações</span>
           </DropdownMenuItem>
         </Link>
-        <Link href="/planos">
-          <DropdownMenuItem className="cursor-pointer focus:bg-accent flex items-center gap-2">
+        <Link href="/planos" className="block">
+          <DropdownMenuItem className="cursor-pointer transition-colors duration-150 hover:bg-accent/10 hover:text-accent focus:bg-accent/10 focus:text-accent flex items-center gap-2 p-3">
             <CreditCard className="h-4 w-4" />
             <span>Planos</span>
           </DropdownMenuItem>
         </Link>
         <DropdownMenuSeparator />
-        <DropdownMenuItem className="cursor-pointer focus:bg-accent">
+        <DropdownMenuItem className="cursor-default p-0 focus:bg-transparent hover:bg-transparent">
           <LogoutButton />
         </DropdownMenuItem>
       </DropdownMenuContent>

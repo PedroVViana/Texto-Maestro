@@ -7,13 +7,14 @@ import { Button } from "@/components/ui/button";
 import { useAuth } from "@/components/Auth/AuthProvider";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { AlertCircle, User, Camera, CreditCard } from "lucide-react";
+import { AlertCircle, User, Camera, CreditCard, Check } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import Link from "next/link";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { UserRibbon } from "@/components/Auth/UserRibbon";
 
 function SettingsContent() {
-  const { user, isLoading } = useAuth();
+  const { user, userPlan, isLoading, remainingRewrites, remainingGenerations, resetUsage } = useAuth();
   const { toast } = useToast();
   const [loading, setLoading] = useState(false);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
@@ -22,12 +23,9 @@ function SettingsContent() {
   // Obter as iniciais do usuário para o fallback do avatar
   const getUserInitials = () => {
     if (!user || !user.displayName) return "U";
-    return user.displayName
-      .split(' ')
-      .map(name => name[0])
-      .join('')
-      .toUpperCase()
-      .substring(0, 2);
+    const nameParts = user.displayName.split(' ');
+    if (nameParts.length === 1) return nameParts[0].charAt(0).toUpperCase();
+    return (nameParts[0].charAt(0) + nameParts[nameParts.length - 1].charAt(0)).toUpperCase();
   };
 
   const handleSaveProfile = (e: React.FormEvent) => {
@@ -65,9 +63,16 @@ function SettingsContent() {
     }
   };
 
+  const getNextBillingDate = () => {
+    const now = new Date();
+    const nextBillingDate = new Date(now);
+    nextBillingDate.setMonth(now.getMonth() + 1);
+    return nextBillingDate.toLocaleDateString('pt-BR');
+  };
+
   if (isLoading) {
     return (
-      <div className="flex flex-col min-h-screen pt-16">
+      <div className="flex flex-col min-h-screen">
         <Navbar />
         <div className="flex-1 flex items-center justify-center">
           <div className="animate-spin h-10 w-10 border-4 border-primary border-t-transparent rounded-full"></div>
@@ -78,7 +83,7 @@ function SettingsContent() {
 
   if (!user) {
     return (
-      <div className="flex flex-col min-h-screen pt-16">
+      <div className="flex flex-col min-h-screen">
         <Navbar />
         <div className="flex-1 flex items-center justify-center flex-col p-4">
           <Card className="w-full max-w-md card-glass p-6 text-center">
@@ -96,14 +101,15 @@ function SettingsContent() {
   }
 
   return (
-    <div className="flex flex-col min-h-screen bg-pattern pt-16">
+    <div className="flex flex-col min-h-screen bg-pattern">
       <Navbar />
+      <UserRibbon />
       
       <div className="grain-overlay"></div>
       <div className="fixed top-[10%] right-[10%] w-24 h-24 md:w-32 md:h-32 rounded-full bg-primary/20 blur-3xl opacity-50"></div>
       <div className="fixed bottom-[10%] left-[10%] w-28 h-28 md:w-40 md:h-40 rounded-full bg-accent/20 blur-3xl opacity-50"></div>
       
-      <div className="container mx-auto py-12 flex-1 px-4">
+      <div className="container mx-auto py-12 flex-1 px-4 mt-12">
         <div className="text-center max-w-3xl mx-auto mb-8">
           <h1 className="text-3xl md:text-4xl font-bold mb-4 text-gradient">Configurações</h1>
           <p className="text-muted-foreground">
@@ -226,9 +232,21 @@ function SettingsContent() {
               <div className="bg-muted/30 rounded-md p-4 border">
                 <div className="flex items-center justify-between">
                   <div>
-                    <h3 className="font-medium text-lg">Plano Gratuito</h3>
+                    <h3 className="font-medium text-lg">{
+                      userPlan.type === "free" ? "Plano Gratuito" :
+                      userPlan.type === "plus" ? "Plano Plus" :
+                      userPlan.type === "pro" ? "Plano Pro" :
+                      "Plano Gratuito"
+                    }</h3>
                     <p className="text-sm text-muted-foreground mt-1">
-                      5 reescritas por dia, 3 gerações de texto por dia, limite de 500 palavras
+                      {userPlan.type === "free" ? 
+                        `${userPlan.rewritesLimit} reescritas por dia, ${userPlan.generationsLimit} geração de texto por dia, limite de ${userPlan.wordLimit} palavras` :
+                       userPlan.type === "plus" ?
+                        `${userPlan.rewritesLimit} reescritas por dia, ${userPlan.generationsLimit} gerações de texto por dia, limite de ${userPlan.wordLimit} palavras` :
+                       userPlan.type === "pro" ?
+                        "Reescritas e gerações ilimitadas, sem limite de palavras" :
+                        "Recursos limitados"
+                      }
                     </p>
                   </div>
                   <div className="bg-primary/10 text-primary px-3 py-1 rounded-full text-xs font-semibold">
@@ -236,15 +254,116 @@ function SettingsContent() {
                   </div>
                 </div>
               </div>
+
+              <div className="mt-4 space-y-3">
+                <div className="space-y-1">
+                  <div className="flex justify-between text-sm">
+                    <span>Reescritas restantes hoje:</span>
+                    <span className="font-medium">{remainingRewrites} de {
+                      userPlan.rewritesLimit === Infinity ? "∞" : userPlan.rewritesLimit
+                    }</span>
+                  </div>
+                  <div className="h-2 bg-muted rounded-full overflow-hidden">
+                    <div 
+                      className="h-full bg-primary rounded-full" 
+                      style={{ 
+                        width: userPlan.rewritesLimit === Infinity ? 
+                          "100%" : 
+                          `${Math.min(100, (remainingRewrites / userPlan.rewritesLimit) * 100)}%` 
+                      }}
+                    ></div>
+                  </div>
+                </div>
+
+                <div className="space-y-1">
+                  <div className="flex justify-between text-sm">
+                    <span>Gerações restantes hoje:</span>
+                    <span className="font-medium">{remainingGenerations} de {
+                      userPlan.generationsLimit === Infinity ? "∞" : userPlan.generationsLimit
+                    }</span>
+                  </div>
+                  <div className="h-2 bg-muted rounded-full overflow-hidden">
+                    <div 
+                      className="h-full bg-accent rounded-full" 
+                      style={{ 
+                        width: userPlan.generationsLimit === Infinity ? 
+                          "100%" : 
+                          `${Math.min(100, (remainingGenerations / userPlan.generationsLimit) * 100)}%` 
+                      }}
+                    ></div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div className="border rounded-md p-3">
+                  <h4 className="font-medium mb-2 text-sm">Recursos do seu plano</h4>
+                  <ul className="space-y-2 text-sm">
+                    <li className="flex items-start gap-2">
+                      <Check className="h-4 w-4 text-primary mt-0.5" />
+                      <span>{userPlan.wordLimit === Infinity ? "Sem limite de palavras" : `Limite de ${userPlan.wordLimit} palavras por texto`}</span>
+                    </li>
+                    <li className="flex items-start gap-2">
+                      <Check className="h-4 w-4 text-primary mt-0.5" />
+                      <span>Acesso a {userPlan.availableStyles} estilos de reescrita</span>
+                    </li>
+                    <li className="flex items-start gap-2">
+                      <Check className="h-4 w-4 text-primary mt-0.5" />
+                      <span>{userPlan.advancedOptionsEnabled ? "Configurações avançadas" : "Configurações básicas"}</span>
+                    </li>
+                    <li className="flex items-start gap-2">
+                      <Check className="h-4 w-4 text-primary mt-0.5" />
+                      <span>Download em formatos: {userPlan.downloadFormats.join(", ").toUpperCase()}</span>
+                    </li>
+                    <li className="flex items-start gap-2">
+                      <Check className="h-4 w-4 text-primary mt-0.5" />
+                      <span>Histórico por {userPlan.historyDays === "unlimited" ? "tempo ilimitado" : `${userPlan.historyDays} dias`}</span>
+                    </li>
+                  </ul>
+                </div>
+
+                <div className="border rounded-md p-3">
+                  <h4 className="font-medium mb-2 text-sm">Ciclo de renovação</h4>
+                  <p className="text-sm text-muted-foreground">
+                    Seu limite diário de uso será renovado automaticamente à meia-noite.
+                  </p>
+                  <button
+                    onClick={() => resetUsage()}
+                    className="mt-3 text-xs text-primary hover:text-primary/80 font-medium transition-colors"
+                  >
+                    Verificar cota novamente
+                  </button>
+
+                  {userPlan.type !== "free" && (
+                    <div className="mt-4 p-2 bg-yellow-50 dark:bg-yellow-900/20 rounded text-xs text-yellow-800 dark:text-yellow-200">
+                      <p>Próxima cobrança: {getNextBillingDate()}</p>
+                    </div>
+                  )}
+                </div>
+              </div>
             </CardContent>
             
-            <CardFooter className="flex justify-end">
-              <Link href="/planos">
-                <Button variant="outline" className="bg-accent/10 border-accent/30 text-accent hover:bg-accent hover:text-white">
-                  <CreditCard className="h-4 w-4 mr-2" />
-                  Atualizar para plano premium
-                </Button>
-              </Link>
+            <CardFooter className="flex flex-col sm:flex-row gap-2">
+              {userPlan.type === "free" ? (
+                <Link href="/planos" className="w-full sm:w-auto">
+                  <Button variant="outline" className="w-full bg-accent/10 border-accent/30 text-accent hover:bg-accent hover:text-white">
+                    <CreditCard className="h-4 w-4 mr-2" />
+                    Atualizar para plano premium
+                  </Button>
+                </Link>
+              ) : (
+                <>
+                  <Link href="/planos" className="w-full sm:w-auto">
+                    <Button variant="outline" className="w-full">
+                      <CreditCard className="h-4 w-4 mr-2" />
+                      Mudar de plano
+                    </Button>
+                  </Link>
+                  <Button variant="outline" className="w-full sm:w-auto border-destructive/30 text-destructive hover:bg-destructive hover:text-white">
+                    Cancelar assinatura
+                  </Button>
+                </>
+              )}
             </CardFooter>
           </Card>
         </div>

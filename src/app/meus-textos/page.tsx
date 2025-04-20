@@ -6,9 +6,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAuth } from "@/components/Auth/AuthProvider";
 import { useToast } from "@/hooks/use-toast";
 import { Navbar } from "@/components/Navbar";
+import { UserRibbon } from "@/components/Auth/UserRibbon";
 import { 
   Copy, Download, Clock, FileText, 
-  Sparkles, Wand, ArrowRight, PenTool 
+  Sparkles, Wand, ArrowRight, PenTool, CreditCard 
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
@@ -32,10 +33,14 @@ interface TextGeneration {
 }
 
 function MyTextsContent() {
-  const { user, isLoading } = useAuth();
+  const { user, isLoading, userPlan } = useAuth();
   const [textResults, setTextResults] = useState<TextResult[]>([]);
   const [textGenerations, setTextGenerations] = useState<TextGeneration[]>([]);
   const [loading, setLoading] = useState(true);
+  const [filteredTextResults, setFilteredTextResults] = useState<TextResult[]>([]);
+  const [filteredTextGenerations, setFilteredTextGenerations] = useState<TextGeneration[]>([]);
+  const [filterStyle, setFilterStyle] = useState<string>("todos");
+  const [filterDateRange, setFilterDateRange] = useState<number | null>(null);
   const { toast } = useToast();
 
   // Traduções para os estilos de reescrita
@@ -66,6 +71,16 @@ function MyTextsContent() {
     "Motivacional": "Motivacional",
   }
 
+  // Opções de período para filtro
+  const filterDateOptions = [
+    { value: 7, label: "Últimos 7 dias" },
+    { value: 30, label: "Últimos 30 dias" },
+    { value: 90, label: "Últimos 3 meses" },
+    { value: 180, label: "Últimos 6 meses" },
+    { value: 365, label: "Último ano" },
+    { value: null, label: "Todo o histórico" }
+  ];
+
   // Traduções para os comprimentos
   const lengthTranslations: {[key: string] : string} = {
     "Short": "Curto",
@@ -75,6 +90,53 @@ function MyTextsContent() {
     "Médio": "Médio",
     "Longo": "Longo"
   }
+
+  // Efeito para aplicar filtros quando os dados ou filtros mudam
+  useEffect(() => {
+    if (textResults.length > 0) {
+      let filtered = [...textResults];
+      
+      // Filtro por estilo de reescrita
+      if (filterStyle !== "todos") {
+        filtered = filtered.filter(item => item.style === filterStyle);
+      }
+      
+      // Filtro por período
+      if (filterDateRange !== null) {
+        const currentDate = new Date();
+        filtered = filtered.filter(item => {
+          const itemDate = new Date(item.timestamp);
+          const diffTime = Math.abs(currentDate.getTime() - itemDate.getTime());
+          const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+          return diffDays <= filterDateRange;
+        });
+      }
+      
+      setFilteredTextResults(filtered);
+    }
+    
+    if (textGenerations.length > 0) {
+      let filtered = [...textGenerations];
+      
+      // Filtro por estilo de geração
+      if (filterStyle !== "todos") {
+        filtered = filtered.filter(item => item.style === filterStyle);
+      }
+      
+      // Filtro por período
+      if (filterDateRange !== null) {
+        const currentDate = new Date();
+        filtered = filtered.filter(item => {
+          const itemDate = new Date(item.timestamp);
+          const diffTime = Math.abs(currentDate.getTime() - itemDate.getTime());
+          const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+          return diffDays <= filterDateRange;
+        });
+      }
+      
+      setFilteredTextGenerations(filtered);
+    }
+  }, [textResults, textGenerations, filterStyle, filterDateRange]);
 
   useEffect(() => {
     // Aqui implementaríamos a lógica para buscar os textos do usuário do Firebase
@@ -87,21 +149,91 @@ function MyTextsContent() {
         const savedGenerations = localStorage.getItem('textGenerations');
         
         if (savedResults) {
-          const parsed = JSON.parse(savedResults);
-          // Convertendo string de data para objeto Date
-          setTextResults(parsed.map((item: any) => ({
-            ...item,
-            timestamp: new Date(item.timestamp)
-          })));
+          try {
+            const parsed = JSON.parse(savedResults);
+            // Convertendo string de data para objeto Date e filtrando por data de acordo com o plano
+            const parsed_with_dates = parsed.map((item: any) => {
+              // Certifique-se de que o timestamp é um objeto Date válido
+              let timestamp;
+              try {
+                timestamp = item.timestamp ? new Date(item.timestamp) : new Date();
+                // Verificar se a data é válida
+                if (isNaN(timestamp.getTime())) {
+                  timestamp = new Date(); // Usar data atual se inválida
+                }
+              } catch (e) {
+                timestamp = new Date(); // Usar data atual em caso de erro
+                console.error("Erro ao converter timestamp:", e);
+              }
+              
+              return {
+                ...item,
+                timestamp
+              };
+            });
+
+            // Filtragem de histórico conforme o plano do usuário
+            const currentDate = new Date();
+            const filteredResults = parsed_with_dates.filter((item: any) => {
+              if (userPlan.historyDays === "unlimited") return true;
+              
+              const itemDate = item.timestamp;
+              const diffTime = Math.abs(currentDate.getTime() - itemDate.getTime());
+              const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+              return diffDays <= userPlan.historyDays;
+            });
+            
+            setTextResults(filteredResults);
+            setFilteredTextResults(filteredResults);
+          } catch (e) {
+            console.error("Erro ao processar dados salvos:", e);
+            setTextResults([]);
+            setFilteredTextResults([]);
+          }
         }
         
         if (savedGenerations) {
-          const parsed = JSON.parse(savedGenerations);
-          // Convertendo string de data para objeto Date
-          setTextGenerations(parsed.map((item: any) => ({
-            ...item,
-            timestamp: new Date(item.timestamp)
-          })));
+          try {
+            const parsed = JSON.parse(savedGenerations);
+            // Convertendo string de data para objeto Date
+            const parsed_with_dates = parsed.map((item: any) => {
+              // Certifique-se de que o timestamp é um objeto Date válido
+              let timestamp;
+              try {
+                timestamp = item.timestamp ? new Date(item.timestamp) : new Date();
+                // Verificar se a data é válida
+                if (isNaN(timestamp.getTime())) {
+                  timestamp = new Date(); // Usar data atual se inválida
+                }
+              } catch (e) {
+                timestamp = new Date(); // Usar data atual em caso de erro
+                console.error("Erro ao converter timestamp:", e);
+              }
+              
+              return {
+                ...item,
+                timestamp
+              };
+            });
+
+            // Filtragem de histórico conforme o plano do usuário
+            const currentDate = new Date();
+            const filteredGenerations = parsed_with_dates.filter((item: any) => {
+              if (userPlan.historyDays === "unlimited") return true;
+              
+              const itemDate = item.timestamp;
+              const diffTime = Math.abs(currentDate.getTime() - itemDate.getTime());
+              const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+              return diffDays <= userPlan.historyDays;
+            });
+            
+            setTextGenerations(filteredGenerations);
+            setFilteredTextGenerations(filteredGenerations);
+          } catch (e) {
+            console.error("Erro ao processar dados salvos:", e);
+            setTextGenerations([]);
+            setFilteredTextGenerations([]);
+          }
         }
         
         setLoading(false);
@@ -115,7 +247,81 @@ function MyTextsContent() {
       });
       setLoading(false);
     }
-  }, [toast, user]);
+  }, [toast, user, userPlan]);
+
+  // Renderiza os controles de filtro para todos, mas desabilita para planos gratuitos
+  const renderFilterControls = () => {
+    const isPremium = userPlan.type !== "free";
+    
+    return (
+      <Card className="mb-6 bg-muted/30">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm flex justify-between items-center">
+            <span>Filtros de Histórico</span>
+            {!isPremium && (
+              <span className="text-xs bg-accent/20 text-accent px-2 py-1 rounded-full">
+                Recurso Premium
+              </span>
+            )}
+          </CardTitle>
+          {!isPremium && (
+            <CardDescription className="text-xs mt-1">
+              Atualize para um plano pago para filtrar seu histórico por período e estilo
+            </CardDescription>
+          )}
+        </CardHeader>
+        <CardContent>
+          <div className="flex flex-col gap-4 sm:flex-row">
+            <div className="w-full sm:w-1/2">
+              <label htmlFor="filter-date" className="text-xs text-muted-foreground mb-1 block">
+                Período de Histórico
+              </label>
+              <select 
+                id="filter-date"
+                className={`w-full p-2 rounded-md bg-background border text-sm ${!isPremium ? "opacity-60 cursor-not-allowed" : ""}`}
+                value={filterDateRange === null ? "null" : filterDateRange}
+                onChange={(e) => isPremium && setFilterDateRange(e.target.value === "null" ? null : Number(e.target.value))}
+                disabled={!isPremium}
+              >
+                {filterDateOptions.map(option => (
+                  <option key={option.label} value={option.value === null ? "null" : option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="w-full sm:w-1/2">
+              <label htmlFor="filter-style" className="text-xs text-muted-foreground mb-1 block">
+                Filtrar por Estilo
+              </label>
+              <select 
+                id="filter-style"
+                className={`w-full p-2 rounded-md bg-background border text-sm ${!isPremium ? "opacity-60 cursor-not-allowed" : ""}`}
+                value={filterStyle}
+                onChange={(e) => isPremium && setFilterStyle(e.target.value)}
+                disabled={!isPremium}
+              >
+                <option value="todos">Todos os estilos</option>
+                {Object.entries(rewriteStyleTranslations).map(([key, value]) => (
+                  <option key={key} value={key}>{value}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+          {!isPremium && (
+            <div className="mt-4 flex justify-center">
+              <Link href="/planos">
+                <Button variant="outline" size="sm" className="text-xs bg-accent/10 border-accent/30 text-accent hover:bg-accent hover:text-white">
+                  <CreditCard className="h-3 w-3 mr-2" />
+                  Obter acesso completo ao histórico
+                </Button>
+              </Link>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    );
+  };
 
   const handleCopy = (text: string) => {
     navigator.clipboard.writeText(text);
@@ -138,18 +344,28 @@ function MyTextsContent() {
   };
 
   const formatDate = (date: Date) => {
-    return new Intl.DateTimeFormat('pt-BR', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    }).format(date);
+    try {
+      // Verifica se o valor é uma data válida
+      if (!(date instanceof Date) || isNaN(date.getTime())) {
+        return "Data não disponível";
+      }
+      
+      return new Intl.DateTimeFormat('pt-BR', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      }).format(date);
+    } catch (error) {
+      console.error("Erro ao formatar data:", error);
+      return "Data não disponível";
+    }
   };
 
-  if (isLoading || loading) {
+  if (isLoading) {
     return (
-      <div className="flex flex-col min-h-screen pt-16">
+      <div className="flex flex-col min-h-screen">
         <Navbar />
         <div className="flex-1 flex items-center justify-center">
           <div className="animate-spin h-10 w-10 border-4 border-primary border-t-transparent rounded-full"></div>
@@ -160,12 +376,12 @@ function MyTextsContent() {
 
   if (!user) {
     return (
-      <div className="flex flex-col min-h-screen pt-16">
+      <div className="flex flex-col min-h-screen">
         <Navbar />
         <div className="flex-1 flex items-center justify-center flex-col p-4">
           <Card className="w-full max-w-md card-glass p-6 text-center">
             <h2 className="text-xl font-semibold mb-4">Acesso Restrito</h2>
-            <p className="mb-6">Faça login para visualizar seus textos salvos.</p>
+            <p className="mb-6">Faça login para acessar seu histórico de textos.</p>
             <div className="flex justify-center">
               <Link href="/">
                 <Button>Voltar para a página inicial</Button>
@@ -178,17 +394,38 @@ function MyTextsContent() {
   }
 
   return (
-    <div className="flex flex-col min-h-screen bg-pattern pt-16">
+    <div className="flex flex-col min-h-screen bg-pattern">
       <Navbar />
+      <UserRibbon />
       
       <div className="grain-overlay"></div>
       <div className="fixed top-[10%] right-[10%] w-24 h-24 md:w-32 md:h-32 rounded-full bg-primary/20 blur-3xl opacity-50"></div>
       <div className="fixed bottom-[10%] left-[10%] w-28 h-28 md:w-40 md:h-40 rounded-full bg-accent/20 blur-3xl opacity-50"></div>
       
-      <div className="container mx-auto py-8 flex-1 px-4">
+      <div className="container mx-auto py-10 flex-1 px-4 mt-12">
         <div className="text-center mb-8">
           <h1 className="text-3xl md:text-4xl font-bold mb-2 text-gradient">Meus Textos</h1>
           <p className="text-muted-foreground">Todos os seus textos salvos em um só lugar</p>
+          <p className="text-xs text-muted-foreground mt-2">
+            {userPlan.historyDays === "unlimited" 
+              ? "Seu plano permite acesso ao histórico completo sem limitação de tempo." 
+              : `Seu plano permite acesso ao histórico dos últimos ${userPlan.historyDays} dias.`}
+          </p>
+          
+          <div className="flex flex-col sm:flex-row justify-center gap-3 mt-6">
+            <Link href="/">
+              <Button variant="outline" className="w-full sm:w-auto flex items-center gap-2 bg-primary/10 border-primary/30 text-primary hover:bg-primary hover:text-white">
+                <PenTool className="h-4 w-4" />
+                <span>Editor de Texto</span>
+              </Button>
+            </Link>
+            <Link href="/gerar">
+              <Button variant="outline" className="w-full sm:w-auto flex items-center gap-2 bg-accent/10 border-accent/30 text-accent hover:bg-accent hover:text-white">
+                <Wand className="h-4 w-4" />
+                <span>Criar Novo Texto</span>
+              </Button>
+            </Link>
+          </div>
         </div>
         
         <Tabs defaultValue="rewritten" className="w-full max-w-4xl mx-auto">
@@ -203,21 +440,39 @@ function MyTextsContent() {
             </TabsTrigger>
           </TabsList>
           
+          {renderFilterControls()}
+          
           <TabsContent value="rewritten" className="space-y-6">
-            {textResults.length === 0 ? (
+            {filteredTextResults.length === 0 ? (
               <Card className="card-glass">
                 <CardContent className="pt-6 pb-6 text-center">
-                  <p className="text-muted-foreground mb-4">Você ainda não tem textos reescritos.</p>
-                  <Link href="/">
-                    <Button className="bg-primary">
-                      Começar a reescrever textos
+                  <p className="text-muted-foreground mb-4">
+                    {textResults.length === 0 
+                      ? "Você ainda não tem textos reescritos." 
+                      : "Nenhum texto encontrado com os filtros atuais."}
+                  </p>
+                  {textResults.length === 0 ? (
+                    <Link href="/">
+                      <Button className="bg-primary">
+                        Começar a reescrever textos
+                      </Button>
+                    </Link>
+                  ) : (
+                    <Button 
+                      variant="outline" 
+                      onClick={() => {
+                        setFilterStyle("todos");
+                        setFilterDateRange(null);
+                      }}
+                    >
+                      Limpar filtros
                     </Button>
-                  </Link>
+                  )}
                 </CardContent>
               </Card>
             ) : (
               <div className="space-y-4">
-                {textResults.map((result) => (
+                {filteredTextResults.map((result) => (
                   <Card key={result.id} className="w-full shadow-lg card-glass">
                     <CardHeader className="pb-2">
                       <div className="flex justify-between items-center">
@@ -272,20 +527,36 @@ function MyTextsContent() {
           </TabsContent>
           
           <TabsContent value="generated" className="space-y-6">
-            {textGenerations.length === 0 ? (
+            {filteredTextGenerations.length === 0 ? (
               <Card className="card-glass">
                 <CardContent className="pt-6 pb-6 text-center">
-                  <p className="text-muted-foreground mb-4">Você ainda não tem textos gerados.</p>
-                  <Link href="/gerar">
-                    <Button className="bg-accent">
-                      Começar a gerar textos
+                  <p className="text-muted-foreground mb-4">
+                    {textGenerations.length === 0 
+                      ? "Você ainda não tem textos gerados." 
+                      : "Nenhum texto encontrado com os filtros atuais."}
+                  </p>
+                  {textGenerations.length === 0 ? (
+                    <Link href="/gerar">
+                      <Button className="bg-accent">
+                        Começar a gerar textos
+                      </Button>
+                    </Link>
+                  ) : (
+                    <Button 
+                      variant="outline" 
+                      onClick={() => {
+                        setFilterStyle("todos");
+                        setFilterDateRange(null);
+                      }}
+                    >
+                      Limpar filtros
                     </Button>
-                  </Link>
+                  )}
                 </CardContent>
               </Card>
             ) : (
               <div className="space-y-4">
-                {textGenerations.map((generation) => (
+                {filteredTextGenerations.map((generation) => (
                   <Card key={generation.id} className="w-full shadow-lg card-glass">
                     <CardHeader className="pb-2">
                       <div className="flex justify-between items-center">

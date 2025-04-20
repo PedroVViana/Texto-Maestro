@@ -33,9 +33,9 @@ export function LogoutButton() {
     <Button 
       onClick={handleLogout} 
       disabled={isLoading}
-      variant="outline"
+      variant="ghost"
       size="sm"
-      className="flex items-center gap-2"
+      className="flex items-center gap-2 w-full justify-start hover:bg-rose-100 hover:text-rose-700 dark:hover:bg-rose-900/30 dark:hover:text-rose-300 rounded-sm px-2"
     >
       {isLoading ? (
         <span className="flex items-center gap-2">
@@ -43,8 +43,8 @@ export function LogoutButton() {
           Saindo...
         </span>
       ) : (
-        <span className="flex items-center gap-1">
-          <LogOut className="h-3.5 w-3.5" />
+        <span className="flex items-center gap-2">
+          <LogOut className="h-4 w-4" />
           Sair
         </span>
       )}
