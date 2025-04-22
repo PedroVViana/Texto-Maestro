@@ -62,7 +62,6 @@ interface TextGeneration {
   analysis?: {
     wordCount: number;
     charCount: number;
-    sentenceCount: number;
     readTime: number;
     sentimentScore?: number;
     sentimentLabel?: 'Positivo' | 'Neutro' | 'Negativo';
@@ -72,7 +71,6 @@ interface TextGeneration {
 interface TextAnalysis {
   wordCount: number;
   charCount: number;
-  sentenceCount: number;
   readTime: number;
   sentimentScore?: number;
   sentimentLabel?: 'Positivo' | 'Neutro' | 'Negativo';
@@ -85,21 +83,42 @@ interface AdvancedConfig {
   enableAdvancedOptions: boolean;
 }
 
+// Objetos de tradução para exibição em português
+const generateStyleTranslations: Record<TextStyle, string> = {
+  "Formal": "Formal",
+  "Casual": "Casual",
+  "Informativo": "Informativo",
+  "Persuasivo": "Persuasivo",
+  "Criativo/Narrativo": "Criativo/Narrativo",
+  "Acadêmico": "Acadêmico",
+  "Jornalístico": "Jornalístico",
+  "Poético": "Poético",
+  "Técnico": "Técnico",
+  "Motivacional": "Motivacional",
+};
+
+const lengthTranslations: Record<TextLength, string> = {
+  "Curto": "Curto",
+  "Médio": "Médio",
+  "Longo": "Longo",
+};
+
 // Componente principal que usa useSearchParams
 function GeneratePageContent() {
   const searchParams = useSearchParams();
-  const [topic, setTopic] = useState("");
+  const initialTopic = searchParams.get("topic") || "";
+  const [topic, setTopic] = useState(initialTopic);
   const [style, setStyle] = useState<TextStyle>(textStyles[0]);
   const [length, setLength] = useState<TextLength>(textLengths[1]);
-  const [textGenerations, setTextGenerations] = useState<TextGeneration[]>([]);
-  const [showHistoryLink, setShowHistoryLink] = useState(false);
+  const [textGeneration, setTextGeneration] = useState<TextGeneration | null>(null);
   const [loading, setLoading] = useState(false);
+  const [showHistoryLink, setShowHistoryLink] = useState(false);
   const [textAnalysis, setTextAnalysis] = useState<TextAnalysis | null>(null);
   const { user, userPlan, remainingGenerations, decrementGenerations } = useAuth();
   const [advancedConfig, setAdvancedConfig] = useState<AdvancedConfig>({
-    targetCharCount: 500,
-    targetWordCount: 100,
-    targetReadTime: 3,
+    targetCharCount: 0,
+    targetWordCount: 0,
+    targetReadTime: 5,
     enableAdvancedOptions: false
   });
   const {toast} = useToast();
@@ -137,16 +156,12 @@ function GeneratePageContent() {
     // Contagem de caracteres
     const charCount = text.length;
     
-    // Contagem de frases (aproximada)
-    const sentenceCount = text.split(/[.!?]+/).filter(sentence => sentence.trim().length > 0).length;
-    
     // Tempo de leitura (considerando 200 palavras por minuto)
     const readTime = Math.max(1, Math.ceil(wordCount / 200));
     
     setTextAnalysis({
       wordCount,
       charCount,
-      sentenceCount,
       readTime
     });
   };
@@ -161,7 +176,119 @@ function GeneratePageContent() {
       return;
     }
     
-    // Verificar cota diária
+    // Para planos infinitos, não verificar limites de cota
+    if (userPlan.type === "pro") {
+      setLoading(true);
+      setTextGeneration(null); // Limpar resultado anterior ao iniciar nova requisição
+      
+      try {
+        // Preparar input básico
+        const input: GenerateTextInput = {
+          topic: topic,
+          style: style,
+          length: length,
+        };
+        
+        // Adicionar configurações avançadas se existirem
+        if (advancedConfig.enableAdvancedOptions && userPlan.advancedOptionsEnabled) {
+          let additionalInstructions = "";
+          
+          if (advancedConfig.targetCharCount > 0) {
+            additionalInstructions += `\nMantenha o texto com aproximadamente ${advancedConfig.targetCharCount} caracteres.`;
+          }
+          
+          if (advancedConfig.targetWordCount > 0) {
+            additionalInstructions += `\nMantenha o texto com aproximadamente ${advancedConfig.targetWordCount} palavras.`;
+          }
+          
+          if (advancedConfig.targetReadTime > 0) {
+            additionalInstructions += `\nEscreva de forma que o tempo de leitura seja de aproximadamente ${advancedConfig.targetReadTime} minutos.`;
+          }
+          
+          // Adicionar instruções adicionais apenas se existirem
+          if (additionalInstructions) {
+            input.additionalInstructions = additionalInstructions.trim();
+          }
+        }
+        
+        // Chamar a API para gerar o texto
+        const result = await generateText(input);
+        
+        // Análise do texto gerado
+        const generatedTextAnalysis = analyzeGeneratedText(result.generatedText);
+        
+        // Criando objeto de resultado
+        const generationResult: TextGeneration = {
+          id: generateId(),
+          topic,
+          generatedText: result.generatedText,
+          style,
+          length,
+          timestamp: new Date(),
+          analysis: generatedTextAnalysis
+        };
+        
+        // Atualizar o estado para mostrar o card com o resultado
+        setTextGeneration(generationResult);
+        setShowHistoryLink(true);
+        
+        // Salvando o resultado no histórico
+        try {
+          const savedGenerations = localStorage.getItem('textGenerations');
+          let allGenerations = savedGenerations ? JSON.parse(savedGenerations) : [];
+          
+          // Adicionar nova geração no início da lista
+          allGenerations = [generationResult, ...allGenerations];
+          
+          // Se o usuário está logado e temos limite de histórico por dias
+          if (user && userPlan.historyDays !== "unlimited") {
+            const cutoffDate = new Date();
+            cutoffDate.setDate(cutoffDate.getDate() - (userPlan.historyDays as number));
+            
+            // Filtrar gerações antigas com tratamento de erro para datas
+            allGenerations = allGenerations.filter((item: TextGeneration) => {
+              try {
+                // Converter string para Date se necessário
+                const itemDate = typeof item.timestamp === 'string' 
+                  ? new Date(item.timestamp) 
+                  : item.timestamp;
+                
+                // Verificar se a data é válida
+                if (!(itemDate instanceof Date) || isNaN(itemDate.getTime())) {
+                  return false;
+                }
+                
+                return itemDate >= cutoffDate;
+              } catch (error) {
+                console.error("Erro ao processar data durante filtragem:", error);
+                return false;
+              }
+            });
+          }
+          
+          // Salvar de volta no localStorage
+          localStorage.setItem('textGenerations', JSON.stringify(allGenerations));
+        } catch (error) {
+          console.error('Erro ao salvar texto gerado:', error);
+        }
+        
+        toast({
+          title: "Texto gerado",
+          description: `Texto gerado com sucesso.`,
+        });
+      } catch (error: any) {
+        toast({
+          variant: "destructive",
+          title: "Erro",
+          description: error.message || "Falha ao gerar o texto.",
+        });
+      } finally {
+        setLoading(false);
+      }
+      return;
+    }
+    
+    // Verificar cota diária para planos com limite
     if (remainingGenerations <= 0) {
       toast({
         variant: "destructive",
@@ -183,6 +310,7 @@ function GeneratePageContent() {
     
     // Verificar se o usuário tem acesso ao estilo selecionado
     const styleIndex = textStyles.indexOf(style);
+    
     if (styleIndex >= userPlan.availableStyles) {
       toast({
         variant: "destructive",
@@ -193,6 +321,8 @@ function GeneratePageContent() {
     }
     
     setLoading(true);
+    setTextGeneration(null); // Limpar resultado anterior ao iniciar nova requisição
+    
     try {
       // Preparar input básico
       const input: GenerateTextInput = {
@@ -267,10 +397,10 @@ function GeneratePageContent() {
       // Análise do texto gerado
       const generatedTextAnalysis = analyzeGeneratedText(result.generatedText);
       
-      // Criar o objeto de geração
-      const newGeneration: TextGeneration = {
+      // Criando objeto de resultado
+      const generationResult: TextGeneration = {
         id: generateId(),
-        topic: topic,
+        topic,
         generatedText: result.generatedText,
         style,
         length,
@@ -278,49 +408,48 @@ function GeneratePageContent() {
         analysis: generatedTextAnalysis
       };
       
-      // Mostrar o link para o histórico
+      // Atualizar o estado para mostrar o card com o resultado
+      setTextGeneration(generationResult);
       setShowHistoryLink(true);
       
-      // Salvar no localStorage se o usuário estiver logado
-      if (user) {
-        try {
-          // Pegar os resultados existentes
-          const savedGenerations = localStorage.getItem('textGenerations');
-          let allGenerations = savedGenerations ? JSON.parse(savedGenerations) : [];
+      // Salvando o resultado no histórico
+      try {
+        const savedGenerations = localStorage.getItem('textGenerations');
+        let allGenerations = savedGenerations ? JSON.parse(savedGenerations) : [];
+        
+        // Adicionar nova geração no início da lista
+        allGenerations = [generationResult, ...allGenerations];
+        
+        // Se o usuário está logado e temos limite de histórico por dias
+        if (user && typeof userPlan.historyDays === 'number') {
+          const cutoffDate = new Date();
+          cutoffDate.setDate(cutoffDate.getDate() - userPlan.historyDays);
           
-          // Adicionar o novo resultado
-          allGenerations = [newGeneration, ...allGenerations];
-          
-          // Limitar o histórico com base no plano do usuário (se não for ilimitado)
-          if (typeof userPlan.historyDays === 'number') {
-            const cutoffDate = new Date();
-            cutoffDate.setDate(cutoffDate.getDate() - userPlan.historyDays);
-            
-            allGenerations = allGenerations.filter((item: TextGeneration) => {
-              try {
-                // Converter string para Date se necessário
-                const itemDate = typeof item.timestamp === 'string' 
-                  ? new Date(item.timestamp) 
-                  : item.timestamp;
-                
-                // Verificar se a data é válida
-                if (!(itemDate instanceof Date) || isNaN(itemDate.getTime())) {
-                  return false;
-                }
-                
-                return itemDate >= cutoffDate;
-              } catch (error) {
-                console.error("Erro ao processar data durante filtragem:", error);
+          // Filtrar gerações antigas com tratamento de erro para datas
+          allGenerations = allGenerations.filter((item: TextGeneration) => {
+            try {
+              // Converter string para Date se necessário
+              const itemDate = typeof item.timestamp === 'string' 
+                ? new Date(item.timestamp) 
+                : item.timestamp;
+              
+              // Verificar se a data é válida
+              if (!(itemDate instanceof Date) || isNaN(itemDate.getTime())) {
                 return false;
               }
-            });
-          }
-          
-          // Salvar de volta no localStorage
-          localStorage.setItem('textGenerations', JSON.stringify(allGenerations));
-        } catch (error) {
-          console.error('Erro ao salvar texto gerado:', error);
+              
+              return itemDate >= cutoffDate;
+            } catch (error) {
+              console.error("Erro ao processar data durante filtragem:", error);
+              return false;
+            }
+          });
         }
+        
+        // Salvar de volta no localStorage
+        localStorage.setItem('textGenerations', JSON.stringify(allGenerations));
+      } catch (error) {
+        console.error('Erro ao salvar texto gerado:', error);
       }
       
       toast({
@@ -344,9 +473,6 @@ function GeneratePageContent() {
     
     // Contagem de caracteres
     const charCount = text.length;
-    
-    // Contagem de frases (aproximada)
-    const sentenceCount = text.split(/[.!?]+/).filter(sentence => sentence.trim().length > 0).length;
     
     // Tempo de leitura (considerando 200 palavras por minuto)
     const readTime = Math.max(1, Math.ceil(wordCount / 200));
@@ -418,7 +544,6 @@ function GeneratePageContent() {
     return {
       wordCount,
       charCount,
-      sentenceCount,
       readTime,
       sentimentScore,
       sentimentLabel
@@ -648,9 +773,9 @@ function GeneratePageContent() {
                         ...advancedConfig,
                         enableAdvancedOptions: e.target.checked,
                         // Se estiver sendo desativado, resetar valores para defaults
-                        targetCharCount: e.target.checked ? advancedConfig.targetCharCount : 500,
-                        targetWordCount: e.target.checked ? advancedConfig.targetWordCount : 100,
-                        targetReadTime: e.target.checked ? advancedConfig.targetReadTime : 3,
+                        targetCharCount: e.target.checked ? advancedConfig.targetCharCount : 0,
+                        targetWordCount: e.target.checked ? advancedConfig.targetWordCount : 0,
+                        targetReadTime: e.target.checked ? advancedConfig.targetReadTime : 5,
                       });
                     }}
                     className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
@@ -746,6 +871,104 @@ function GeneratePageContent() {
         </CardContent>
       </Card>
       
+      {/* Card do Resultado da Geração */}
+      {textGeneration && (
+        <Card className="w-full max-w-xs sm:max-w-md md:max-w-2xl p-2 sm:p-3 md:p-4 shadow-lg card-glass fade-in-up mt-6" style={{animationDelay: "0.2s"}}>
+          <CardHeader className="p-2 sm:p-3 md:p-6">
+            <div className="flex justify-between items-center">
+              <CardTitle className="flex items-center gap-2 text-lg md:text-xl">
+                <Wand className="h-4 w-4 md:h-5 md:w-5 text-accent" />
+                <span className="text-gradient-primary">Texto Gerado</span>
+              </CardTitle>
+              <span className="text-xs text-muted-foreground flex items-center gap-1">
+                <Clock className="h-3 w-3" />
+                {formatDate(textGeneration.timestamp)}
+              </span>
+            </div>
+            <CardDescription className="text-xs md:text-sm flex items-center gap-1">
+              <span>Tópico: </span>
+              <span className="font-medium">{textGeneration.topic}</span>
+              <span className="mx-1">•</span>
+              <span>Estilo: </span>
+              <span className="font-medium">{generateStyleTranslations[textGeneration.style] || textGeneration.style}</span>
+              <span className="mx-1">•</span>
+              <span>Tamanho: </span>
+              <span className="font-medium">{lengthTranslations[textGeneration.length] || textGeneration.length}</span>
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="p-2 sm:p-3 md:p-6 pt-0 md:pt-0">
+            <div className="bg-muted/30 rounded-md p-3 text-sm max-h-96 overflow-auto mb-3">
+              {textGeneration.generatedText}
+            </div>
+            
+            {textGeneration.analysis && (
+              <div className="bg-muted/30 rounded-md p-2 md:p-3 border text-xs md:text-sm mb-3">
+                <div className="flex items-center gap-1 mb-1.5 text-primary font-medium">
+                  <BarChart2 className="h-3 w-3 md:h-4 md:w-4" />
+                  <span>Análise do Texto Gerado</span>
+                </div>
+                
+                <div className="grid grid-cols-1 xs:grid-cols-2 md:grid-cols-4 gap-x-3 gap-y-1.5">
+                  <div className="flex items-center gap-1">
+                    <span className="text-muted-foreground">Palavras:</span>
+                    <span className="font-medium">{textGeneration.analysis.wordCount}</span>
+                  </div>
+                  
+                  <div className="flex items-center gap-1">
+                    <span className="text-muted-foreground">Caracteres:</span>
+                    <span className="font-medium">{textGeneration.analysis.charCount}</span>
+                  </div>
+                  
+                  <div className="flex items-center gap-1">
+                    <span className="text-muted-foreground">Tempo de leitura:</span>
+                    <span className="font-medium">{textGeneration.analysis.readTime} min</span>
+                  </div>
+                  
+                  {textGeneration.analysis.sentimentLabel && (
+                    <div className="flex items-center gap-1 col-span-1">
+                      <span className="text-muted-foreground">Sentimento:</span>
+                      {renderSentimentBadge(textGeneration.analysis.sentimentLabel)}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+            
+            <div className="flex justify-between items-center">
+              <Button 
+                variant="outline" 
+                size="sm" 
+                onClick={() => {
+                  // Navegar para a página principal com o texto gerado para reescrever
+                  window.location.href = `/?text=${encodeURIComponent(textGeneration.generatedText)}`;
+                }}
+              >
+                <PenTool className="h-3 w-3 mr-2" />
+                Reescrever
+              </Button>
+              <div className="flex gap-2">
+                <Button 
+                  variant="outline" 
+                  size="icon"
+                  className="h-8 w-8 text-accent"
+                  onClick={() => handleCopy(textGeneration.generatedText)}
+                >
+                  <Copy className="h-3 w-3" />
+                </Button>
+                <Button 
+                  variant="outline" 
+                  size="icon"
+                  className="h-8 w-8 text-primary"
+                  onClick={() => handleDownload(textGeneration.generatedText, `texto_${generateStyleTranslations[textGeneration.style] || textGeneration.style}_${textGeneration.id}.txt`)}
+                >
+                  <Download className="h-3 w-3" />
+                </Button>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       <footer className="w-full max-w-xs sm:max-w-md md:max-w-2xl text-center mt-8 md:mt-12 mb-4 md:mb-6 text-xs md:text-sm text-muted-foreground">
         <div className="flex flex-col items-center justify-center">
           <div className="mb-1 md:mb-2">

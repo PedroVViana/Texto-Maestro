@@ -57,7 +57,6 @@ interface TextResult {
   differences?: {
     wordCount: number;
     charCount: number;
-    sentenceCount: number;
     readTime: number;
   };
 }
@@ -65,14 +64,12 @@ interface TextResult {
 interface TextAnalysis {
   wordCount: number;
   charCount: number;
-  sentenceCount: number;
   readTime: number;
   sentimentScore?: number;
   sentimentLabel: 'Positivo' | 'Neutro' | 'Negativo';
   comparison?: {
     wordCountDiff: number;
     charCountDiff: number;
-    sentenceCountDiff: number;
     readTimeDiff: number;
   };
 }
@@ -100,6 +97,7 @@ function HomeContent() {
     targetSentiment: undefined,
   });
   const {toast} = useToast();
+  const [rewrittenResult, setRewrittenResult] = useState<TextResult | null>(null);
 
   // Buscar texto da URL, se existir (vindo da página de geração)
   useEffect(() => {
@@ -124,9 +122,6 @@ function HomeContent() {
     // Contagem de caracteres
     const charCount = text.length;
     
-    // Contagem de frases (aproximada)
-    const sentenceCount = text.split(/[.!?]+/).filter(sentence => sentence.trim().length > 0).length;
-    
     // Tempo de leitura (considerando 200 palavras por minuto)
     const readTime = Math.max(1, Math.ceil(wordCount / 200));
     
@@ -149,7 +144,6 @@ function HomeContent() {
     const analysis: TextAnalysis = {
       wordCount,
       charCount,
-      sentenceCount,
       readTime,
       sentimentScore,
       sentimentLabel
@@ -162,6 +156,113 @@ function HomeContent() {
   const handleRewrite = async () => {
     if (!text.trim()) return;
     
+    // Para planos infinitos, não verificar limites
+    if (userPlan.type === "pro") {
+      setLoading(true);
+      setRewrittenResult(null);
+      
+      try {
+        // Preparar o input 
+        const rewriteInput: RewriteTextInput = {
+          text,
+          style,
+        };
+        
+        // Adicionar configurações avançadas se existirem
+        if (userPlan.advancedOptionsEnabled) {
+          if (advancedConfig.targetCharCount) rewriteInput.targetCharCount = advancedConfig.targetCharCount;
+          if (advancedConfig.targetWordCount) rewriteInput.targetWordCount = advancedConfig.targetWordCount;
+          if (advancedConfig.targetReadTime) rewriteInput.targetReadTime = advancedConfig.targetReadTime;
+          if (advancedConfig.targetSentiment) rewriteInput.targetSentiment = advancedConfig.targetSentiment;
+        }
+
+        const response = await fetch('/api/rewrite', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(rewriteInput),
+        });
+
+        const data = await response.json();
+        
+        if (!response.ok) {
+          throw new Error(data.error || 'Erro ao reescrever texto');
+        }
+        
+        // Análise do texto reescrito
+        const rewrittenTextAnalysis: TextAnalysis = analyzeText(data.rewrittenText);
+        
+        // Calculando diferenças percentuais apenas se ambas as análises existirem
+        let differences = undefined;
+        if (textAnalysis && rewrittenTextAnalysis) {
+          differences = {
+            wordCount: calculatePercentageDiff(textAnalysis.wordCount, rewrittenTextAnalysis.wordCount),
+            charCount: calculatePercentageDiff(textAnalysis.charCount, rewrittenTextAnalysis.charCount),
+            readTime: calculatePercentageDiff(textAnalysis.readTime, rewrittenTextAnalysis.readTime)
+          };
+        }
+        
+        // Criando objeto de resultado
+        const result: TextResult = {
+          id: generateId(),
+          originalText: text,
+          rewrittenText: data.rewrittenText,
+          style,
+          timestamp: new Date(),
+          analysis: rewrittenTextAnalysis,
+          differences
+        };
+        
+        // Salvando o resultado no histórico
+        const savedResults = localStorage.getItem('textResults');
+        let allResults = savedResults ? JSON.parse(savedResults) : [];
+        allResults = [result, ...allResults];
+        
+        // Limitar o histórico com base no plano do usuário (se não for ilimitado)
+        if (user && userPlan.historyDays !== "unlimited") {
+          const cutoffDate = new Date();
+          cutoffDate.setDate(cutoffDate.getDate() - (userPlan.historyDays as number));
+          
+          allResults = allResults.filter((item: TextResult) => 
+            new Date(item.timestamp) >= cutoffDate
+          );
+        }
+        
+        // Salvar no localStorage
+        localStorage.setItem('textResults', JSON.stringify(allResults));
+        
+        // Atualizar estado para mostrar o card com o resultado
+        setRewrittenResult(result);
+        
+        // Atualizando estado para mostrar o link para a página de histórico
+        setTextResults(prev => {
+          // Verificar se já existe resultados para mostrar o link "Ver meu histórico"
+          if (prev.length === 0) {
+            return [result];
+          }
+          return prev;
+        });
+        
+        // Notificação de sucesso
+        toast({
+          title: "Texto reescrito com sucesso!",
+          description: `Seu texto foi reescrito no estilo solicitado.`,
+        });
+      } catch (error) {
+        console.error('Erro ao reescrever texto:', error);
+        toast({
+          title: "Erro ao reescrever texto",
+          description: error instanceof Error ? error.message : "Ocorreu um erro inesperado.",
+          variant: "destructive",
+        });
+      } finally {
+        setLoading(false);
+      }
+      return;
+    }
+    
+    // Para planos não infinitos, verificar limites
     // Verificar limites de plano
     if (text.trim().split(/\s+/).length > userPlan.wordLimit) {
       toast({
@@ -183,6 +284,7 @@ function HomeContent() {
     }
     
     setLoading(true);
+    setRewrittenResult(null); // Limpar resultado anterior ao iniciar nova requisição
     
     try {
       // Verificar se as configurações avançadas estão ativadas e se o usuário tem permissão para usá-las
@@ -252,7 +354,6 @@ function HomeContent() {
         differences = {
           wordCount: calculatePercentageDiff(textAnalysis.wordCount, rewrittenTextAnalysis.wordCount),
           charCount: calculatePercentageDiff(textAnalysis.charCount, rewrittenTextAnalysis.charCount),
-          sentenceCount: calculatePercentageDiff(textAnalysis.sentenceCount, rewrittenTextAnalysis.sentenceCount),
           readTime: calculatePercentageDiff(textAnalysis.readTime, rewrittenTextAnalysis.readTime)
         };
       }
@@ -285,6 +386,9 @@ function HomeContent() {
       
       // Salvar no localStorage
       localStorage.setItem('textResults', JSON.stringify(allResults));
+      
+      // Atualizar estado para mostrar o card com o resultado
+      setRewrittenResult(result);
       
       // Atualizando estado para mostrar o link para a página de histórico
       setTextResults(prev => {
@@ -347,6 +451,46 @@ function HomeContent() {
     "Creative/Narrative style": "Estilo criativo/narrativo",
     "Technical style": "Estilo técnico",
     "SEO optimized": "Otimizado para SEO",
+  };
+
+  // Função para formatar a data para o card de resultado
+  const formatDate = (date: Date) => {
+    try {
+      // Verificar se o valor é uma data válida
+      if (!(date instanceof Date) || isNaN(date.getTime())) {
+        return "Agora";
+      }
+      
+      return new Intl.DateTimeFormat('pt-BR', {
+        hour: '2-digit',
+        minute: '2-digit'
+      }).format(date);
+    } catch (error) {
+      console.error("Erro ao formatar data:", error);
+      return "Agora";
+    }
+  };
+
+  // Função para copiar o texto
+  const handleCopy = (text: string) => {
+    navigator.clipboard.writeText(text);
+    toast({
+      title: "Copiado!",
+      description: "Texto copiado para a área de transferência.",
+    });
+  };
+
+  // Função para baixar o texto
+  const handleDownload = (text: string, filename: string) => {
+    const element = document.createElement("a");
+    const file = new Blob([text], {
+      type: "text/plain",
+    });
+    element.href = URL.createObjectURL(file);
+    element.download = filename;
+    document.body.appendChild(element);
+    element.click();
+    document.body.removeChild(element);
   };
 
   return (
@@ -414,11 +558,6 @@ function HomeContent() {
                   <div className="flex items-center gap-1">
                     <span className="text-muted-foreground">Caracteres:</span>
                     <span className="font-medium">{textAnalysis.charCount}</span>
-                  </div>
-                  
-                  <div className="flex items-center gap-1">
-                    <span className="text-muted-foreground">Frases:</span>
-                    <span className="font-medium">{textAnalysis.sentenceCount}</span>
                   </div>
                   
                   <div className="flex items-center gap-1">
@@ -606,6 +745,112 @@ function HomeContent() {
         </CardContent>
       </Card>
 
+      {/* Card do Resultado da Reescrita */}
+      {rewrittenResult && (
+        <Card className="w-full max-w-xs sm:max-w-md md:max-w-2xl p-2 sm:p-3 md:p-4 shadow-lg card-glass fade-in-up mt-6" style={{animationDelay: "0.2s"}}>
+          <CardHeader className="p-2 sm:p-3 md:p-6">
+            <div className="flex justify-between items-center">
+              <CardTitle className="flex items-center gap-2 text-lg md:text-xl">
+                <PenTool className="h-4 w-4 md:h-5 md:w-5 text-primary" />
+                <span className="text-gradient-primary">Texto Reescrito</span>
+              </CardTitle>
+              <span className="text-xs text-muted-foreground flex items-center gap-1">
+                <Clock className="h-3 w-3" />
+                {formatDate(rewrittenResult.timestamp)}
+              </span>
+            </div>
+            <CardDescription className="text-xs md:text-sm flex items-center gap-1">
+              <span>Estilo:</span>
+              <span className="font-medium">{rewriteStyleTranslations[rewrittenResult.style] || rewrittenResult.style}</span>
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="p-2 sm:p-3 md:p-6 pt-0 md:pt-0">
+            <div className="bg-muted/30 rounded-md p-3 text-sm max-h-64 overflow-auto mb-3">
+              {rewrittenResult.rewrittenText}
+            </div>
+            
+            {rewrittenResult.analysis && (
+              <div className="bg-muted/30 rounded-md p-2 md:p-3 border text-xs md:text-sm mb-3">
+                <div className="flex items-center gap-1 mb-1.5 text-primary font-medium">
+                  <BarChart2 className="h-3 w-3 md:h-4 md:w-4" />
+                  <span>Análise do Texto Reescrito</span>
+                </div>
+                
+                <div className="grid grid-cols-1 xs:grid-cols-2 md:grid-cols-3 gap-x-3 gap-y-1.5">
+                  <div className="flex items-center gap-1">
+                    <span className="text-muted-foreground">Palavras:</span>
+                    <span className="font-medium">{rewrittenResult.analysis.wordCount}</span>
+                    {rewrittenResult.differences && (
+                      <span className={`text-xs ${rewrittenResult.differences.wordCount > 0 ? 'text-green-500' : rewrittenResult.differences.wordCount < 0 ? 'text-red-500' : ''}`}>
+                        {rewrittenResult.differences.wordCount > 0 ? `+${rewrittenResult.differences.wordCount}%` : rewrittenResult.differences.wordCount < 0 ? `${rewrittenResult.differences.wordCount}%` : ''}
+                      </span>
+                    )}
+                  </div>
+                  
+                  <div className="flex items-center gap-1">
+                    <span className="text-muted-foreground">Caracteres:</span>
+                    <span className="font-medium">{rewrittenResult.analysis.charCount}</span>
+                    {rewrittenResult.differences && (
+                      <span className={`text-xs ${rewrittenResult.differences.charCount > 0 ? 'text-green-500' : rewrittenResult.differences.charCount < 0 ? 'text-red-500' : ''}`}>
+                        {rewrittenResult.differences.charCount > 0 ? `+${rewrittenResult.differences.charCount}%` : rewrittenResult.differences.charCount < 0 ? `${rewrittenResult.differences.charCount}%` : ''}
+                      </span>
+                    )}
+                  </div>
+                  
+                  <div className="flex items-center gap-1">
+                    <span className="text-muted-foreground">Tempo de leitura:</span>
+                    <span className="font-medium">{rewrittenResult.analysis.readTime} min</span>
+                    {rewrittenResult.differences && (
+                      <span className={`text-xs ${rewrittenResult.differences.readTime > 0 ? 'text-green-500' : rewrittenResult.differences.readTime < 0 ? 'text-red-500' : ''}`}>
+                        {rewrittenResult.differences.readTime > 0 ? `+${rewrittenResult.differences.readTime}%` : rewrittenResult.differences.readTime < 0 ? `${rewrittenResult.differences.readTime}%` : ''}
+                      </span>
+                    )}
+                  </div>
+                  
+                  <div className="flex items-center gap-1 col-span-2 md:col-span-1">
+                    <span className="text-muted-foreground">Sentimento:</span>
+                    {renderSentimentBadge(rewrittenResult.analysis.sentimentLabel)}
+                  </div>
+                </div>
+              </div>
+            )}
+            
+            <div className="flex justify-between items-center">
+              <Button 
+                variant="outline" 
+                size="sm" 
+                onClick={() => {
+                  setText(rewrittenResult.rewrittenText);
+                  setRewrittenResult(null);
+                  window.scrollTo({ top: 0, behavior: 'smooth' });
+                }}
+              >
+                <PenTool className="h-3 w-3 mr-2" />
+                Reescrever novamente
+              </Button>
+              <div className="flex gap-2">
+                <Button 
+                  variant="outline" 
+                  size="icon"
+                  className="h-8 w-8 text-accent"
+                  onClick={() => handleCopy(rewrittenResult.rewrittenText)}
+                >
+                  <Copy className="h-3 w-3" />
+                </Button>
+                <Button 
+                  variant="outline" 
+                  size="icon"
+                  className="h-8 w-8 text-primary"
+                  onClick={() => handleDownload(rewrittenResult.rewrittenText, `texto_${rewriteStyleTranslations[rewrittenResult.style] || rewrittenResult.style}_${rewrittenResult.id}.txt`)}
+                >
+                  <Download className="h-3 w-3" />
+                </Button>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       <footer className="w-full max-w-xs sm:max-w-md md:max-w-2xl text-center mt-8 md:mt-12 mb-4 md:mb-6 text-xs md:text-sm text-muted-foreground">
         <div className="flex flex-col items-center justify-center">
           <div className="mb-1 md:mb-2">
@@ -628,7 +873,7 @@ function HomeContent() {
           </a>
         </div>
       </footer>
-            </div>
+    </div>
   );
 }
 

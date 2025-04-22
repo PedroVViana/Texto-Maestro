@@ -259,9 +259,11 @@ function SettingsContent() {
                 <div className="space-y-1">
                   <div className="flex justify-between text-sm">
                     <span>Reescritas restantes hoje:</span>
-                    <span className="font-medium">{remainingRewrites} de {
-                      userPlan.rewritesLimit === Infinity ? "∞" : userPlan.rewritesLimit
-                    }</span>
+                    <span className="font-medium">
+                      {userPlan.rewritesLimit === Infinity 
+                        ? `∞ de ∞` 
+                        : `${remainingRewrites} de ${userPlan.rewritesLimit}`}
+                    </span>
                   </div>
                   <div className="h-2 bg-muted rounded-full overflow-hidden">
                     <div 
@@ -278,9 +280,11 @@ function SettingsContent() {
                 <div className="space-y-1">
                   <div className="flex justify-between text-sm">
                     <span>Gerações restantes hoje:</span>
-                    <span className="font-medium">{remainingGenerations} de {
-                      userPlan.generationsLimit === Infinity ? "∞" : userPlan.generationsLimit
-                    }</span>
+                    <span className="font-medium">
+                      {userPlan.generationsLimit === Infinity 
+                        ? `∞ de ∞` 
+                        : `${remainingGenerations} de ${userPlan.generationsLimit}`}
+                    </span>
                   </div>
                   <div className="h-2 bg-muted rounded-full overflow-hidden">
                     <div 
